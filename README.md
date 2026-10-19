@@ -73,19 +73,23 @@ Detailed phases live in [docs/ROADMAP.md](docs/ROADMAP.md):
 
 Charon is in development and runs from source — there is no installer
 yet (a single self-installing `Charon.exe` is on the roadmap's backlog,
-once the engine phases land). The Phase 1 scan engine is built:
+once the engine phases land). The scan, download staging, and the toll
+are built:
 
 ```
 python -m charon scan              # inventory drivers, flag outdated ones
 python -m charon scan --json PATH  # also write the full report as JSON
-python -m charon --version         # 0.2.0
+python -m charon download          # stage outdated drivers (installs nothing)
+python -m charon toll              # pay the toll: create + verify a restore point
+python -m charon --version         # 0.4.0
 ```
 
 The scan is **read-only**: it downloads nothing, installs nothing, and
-changes nothing — and it creates no restore points yet (the toll is
-Phase 3, on schedule, not early). The inventory runs on Windows (it
-queries the Windows driver store and Windows Update); the test suite
-runs anywhere from recorded fixtures.
+changes nothing. Download stages updates into the Windows Update cache
+and applies nothing. The toll creates a System Restore point and
+verifies it exists. The inventory runs on Windows (it queries the
+Windows driver store and Windows Update); the test suite runs
+anywhere from recorded fixtures.
 
 ## How it works
 
@@ -103,11 +107,24 @@ runs anywhere from recorded fixtures.
   `update_available` / `up_to_date` / `unknown` — never a guess.
   Version comparison outranks dates; date-only calls are low
   confidence, because driver dates lie.
+- `charon/download.py` and `charon/wua_download.py` stage the updates:
+  every plan is revalidated against a fresh search (a withdrawn update
+  is marked `no_longer_available` — never silently substituted), the
+  fetch lives in the one download seam, and the ledger records what
+  is aboard. Nothing is installed.
+- `charon/toll.py` is the toll seam and the gate: it creates the
+  restore point with a marker unique to the run, then **verifies by
+  enumeration** that a point carrying that marker was freshly stamped
+  — Windows silently skips a requested point when a recent one exists,
+  and a skipped toll is an unpaid toll. `require_paid_toll()` is the
+  gate the apply engine must pass, re-verified against the PC every
+  time.
 - `charon/model.py` and `charon/cli.py` produce the report (table or
   JSON) with designed plain-language failure states instead of
   tracebacks. The safety properties are test-pinned: the suite asserts
-  the exact OS commands issued and proves no code path can download,
-  install, remove, or modify a driver today.
+  the exact OS commands issued and proves capability is confined to
+  its seam — no code path can install, remove, or modify a driver
+  today, and restore points exist only in the toll seam.
 
 ## Standards
 
@@ -124,13 +141,23 @@ Built to the Sentinel bar, same as the rest of the kit:
 
 ## Status
 
-**Phase 1 — scan engine built** (2026-10-19). `python -m charon scan`
-inventories every installed driver and flags the outdated ones against
-what Windows Update itself offers — read-only: nothing is downloaded,
-installed, or changed. A 72-test suite (recorded fixtures) is green;
-Windows on-hardware verification comes next. Phases 2–5 — download
-staging, the toll, the apply engine, the animated UI — follow the
-roadmap, in the Crossing's order.
+**Phases 1–3 built** (2026-10-19). `python -m charon scan` inventories
+every installed driver and flags the outdated ones against what
+Windows Update itself offers — read-only. `python -m charon download`
+stages those updates into the Windows Update cache (never a silent
+substitute: every plan is re-checked against a fresh search first)
+and records them in Charon's download ledger — **nothing is
+installed**. `python -m charon toll` pays the toll: a System Restore
+point created and then **verified** by enumeration — because Windows
+silently skips a requested point when a recent one exists, Charon
+trusts only a point carrying this run's own marker, freshly stamped.
+A skipped, missing, or unverifiable toll is an unpaid toll, and the
+apply engine will be required to present a verified toll at
+`require_paid_toll()` before anything crosses. The full test suite
+(131 tests, recorded fixtures and fake Windows seams) is green;
+Windows on-hardware verification comes next. Phases 4–5 — the apply
+engine and the animated UI — follow the roadmap, in the Crossing's
+order.
 
 ## License
 
