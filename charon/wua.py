@@ -6,9 +6,11 @@ runs one search, reads the results, and stops.
 
 There is intentionally **no** capability here to fetch or apply an
 update: no downloader object, no installer object, no such methods on
-any class in this module. Phase 1 only looks. The test suite pins this
-by scanning this module's source for the API surface that would be
-needed to change anything on the machine.
+any class in this module. A search may carry the opaque update object
+(``com_update``) so the Phase 2 download seam can revalidate and
+fetch the very thing Windows Update just offered — carrying a handle
+is not fetching, and the fetching itself lives only in
+``wua_download``. The test suite pins this module's API surface.
 """
 
 from __future__ import annotations
@@ -44,10 +46,14 @@ class UpdateSearcher(Protocol):
 
     Implementations return raw update mappings (title, driver_model,
     driver_class, provider, version, driver_date_text/driver_date,
-    hardware_ids). Normalization happens in ``inventory``.
+    hardware_ids). Normalization happens in ``inventory``. With
+    ``keep_objects=True`` each mapping also carries the opaque seam
+    object under ``com_update`` — that is how the Phase 2 download
+    seam revalidates against a fresh search and downloads the very
+    object Windows Update just offered, never a stale handle.
     """
 
-    def search(self, criteria: str) -> list[dict]:
+    def search(self, criteria: str, keep_objects: bool = False) -> list[dict]:
         ...
 
 
@@ -73,29 +79,36 @@ class ComUpdateSearcher:
             session = win32com.client.Dispatch("Microsoft.Update.Session")
         self._session = session
 
-    def search(self, criteria: str) -> list[dict]:
+    def search(self, criteria: str, keep_objects: bool = False) -> list[dict]:
         searcher = self._session.CreateUpdateSearcher()
         result = searcher.Search(criteria)
         updates: list[dict] = []
         for update in result.Updates:
             hardware_id = _com_field(update, "DriverHardwareID")
-            updates.append(
-                {
-                    "title": str(_com_field(update, "Title")),
-                    "driver_model": str(_com_field(update, "DriverModel")),
-                    "driver_class": str(_com_field(update, "DriverClass")),
-                    "provider": str(
-                        _com_field(update, "DriverManufacturer")
-                    ),
-                    "version": str(_com_field(update, "DriverVersion")),
-                    "driver_date": _com_field(update, "DriverVerDate", None),
-                    "hardware_ids": [hardware_id] if hardware_id else [],
-                }
-            )
+            raw = {
+                "title": str(_com_field(update, "Title")),
+                "driver_model": str(_com_field(update, "DriverModel")),
+                "driver_class": str(_com_field(update, "DriverClass")),
+                "provider": str(
+                    _com_field(update, "DriverManufacturer")
+                ),
+                "version": str(_com_field(update, "DriverVersion")),
+                "driver_date": _com_field(update, "DriverVerDate", None),
+                "hardware_ids": [hardware_id] if hardware_id else [],
+            }
+            if keep_objects:
+                # The opaque seam object, carried for the download
+                # seam's revalidation. It is never serialized, never
+                # normalized into the report model — the manifest
+                # stays data; the handle stays a handle.
+                raw["com_update"] = update
+            updates.append(raw)
         return updates
 
 
-def search_driver_updates(searcher: UpdateSearcher | None = None) -> list[dict]:
+def search_driver_updates(
+    searcher: UpdateSearcher | None = None, keep_objects: bool = False
+) -> list[dict]:
     """Return raw driver-update mappings offered by Windows Update.
 
     Raises :class:`WuaUnavailable` (plain-language) when Windows Update
@@ -116,7 +129,7 @@ def search_driver_updates(searcher: UpdateSearcher | None = None) -> list[dict]:
                 detail=f"{type(exc).__name__}: {exc}",
             ) from exc
     try:
-        return searcher.search(WUA_SEARCH_CRITERIA)
+        return searcher.search(WUA_SEARCH_CRITERIA, keep_objects=keep_objects)
     except Exception as exc:
         log.warning("WUA search failed: %s", exc)
         raise WuaUnavailable(
