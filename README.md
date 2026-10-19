@@ -84,7 +84,12 @@ Built to the Sentinel bar, same as the rest of the kit:
 
 ## Status
 
-**Phase 0 — scaffold** (2026-10-19). Concept, brand, and build plan locked.
-Phase 1 (driver inventory & scan engine) is next.
+**Phase 1 — scan engine built** (2026-10-19). `python -m charon scan`
+inventories every installed driver and flags the outdated ones against
+what Windows Update itself offers — read-only: nothing is downloaded,
+installed, or changed. A 72-test suite (recorded fixtures) is green;
+Windows on-hardware verification comes next. Phases 2–5 — download
+staging, the toll, the apply engine, the animated UI — follow the
+roadmap, in the Crossing's order.
 
 *Sentinel Safeguard LLC — Kansas City, MO.*
