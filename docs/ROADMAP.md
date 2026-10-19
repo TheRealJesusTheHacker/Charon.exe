@@ -20,6 +20,31 @@ stops the run before anything is applied — by design, not by error handling.
 - Outdated determination: installed version/date vs. what Phase 2 can source.
 - Read-only by design — Phase 1 never changes a driver.
 
+**Status: BUILT (2026-10-19).** The scan engine is complete:
+
+- `charon/platform_inventory.py` — the only OS seam: the read-only CIM
+  device query (`Win32_PnPSignedDriver` via PowerShell → JSON) plus the
+  `pnputil /enum-drivers` enumeration as cross-check and fallback.
+- `charon/wua.py` — a search-only Windows Update Agent seam (the asking
+  half of Phase 2's sourcing, built now because outdated determination
+  needs it). It exposes **no** download or install capability at all.
+- `charon/inventory.py` / `charon/matching.py` — pure logic: normalize
+  both sources into one passenger manifest, match devices to offered
+  updates by hardware ID (name-only matches are labeled lower
+  confidence), classify `update_available` / `up_to_date` / `unknown` —
+  never a guess. Version comparison outranks dates; date-only calls are
+  low confidence, because driver dates lie.
+- `charon/model.py` / `charon/cli.py` — the report model and
+  `python -m charon scan` (table + `--json` export), with designed
+  plain-language failure states instead of tracebacks.
+- Safety is test-pinned: the suite asserts the exact OS commands
+  issued and scans the package to prove no code path can download,
+  install, remove, or modify a driver — and none creates restore
+  points yet (the toll is Phase 3, on schedule, not early).
+- 72 tests green on Linux from recorded fixtures. **Pending: Windows
+  on-hardware verification** (scan aroura; compare against Device
+  Manager, pnputil, and Windows Update's own offered drivers).
+
 ## Phase 2 — Update sourcing
 
 - Primary channel: the **Windows Update Agent API** — the legitimate route
