@@ -1,0 +1,121 @@
+[
+ {
+  "DeviceClass": "Net",
+  "DeviceID": "PCI\\VEN_8086&DEV_34F0&SUBSYS_00748086&REV_30\\3&11583659&1&A3",
+  "DeviceName": "Intel(R) Wi-Fi 6 AX201 160MHz",
+  "DriverDate": "/Date(1615766400000)/",
+  "DriverProviderName": "Intel",
+  "DriverVersion": "22.40.0.7",
+  "HardWareID": [
+   "PCI\\VEN_8086&DEV_34F0&SUBSYS_00748086",
+   "PCI\\VEN_8086&DEV_34F0"
+  ],
+  "InfName": "oem42.inf",
+  "IsSigned": true
+ },
+ {
+  "DeviceClass": "Display",
+  "DeviceID": "PCI\\VEN_10DE&DEV_2504&SUBSYS_40511458&REV_A1\\4&2B9A6D3&0&0008",
+  "DeviceName": "NVIDIA GeForce RTX 3060",
+  "DriverDate": "2023-06-14T07:00:00",
+  "DriverProviderName": "NVIDIA",
+  "DriverVersion": "31.0.15.3640",
+  "HardWareID": [
+   "PCI\\VEN_10DE&DEV_2504&SUBSYS_40511458",
+   "PCI\\VEN_10DE&DEV_2504"
+  ],
+  "InfName": "oem18.inf",
+  "IsSigned": true
+ },
+ {
+  "DeviceClass": "Media",
+  "DeviceID": "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0897&SUBSYS_1458A194&REV_1004\\4&1A2B3C4&0&0001",
+  "DeviceName": "Realtek High Definition Audio",
+  "DriverDate": "2021-09-21T00:00:00-05:00",
+  "DriverProviderName": "Realtek Semiconductor Corp.",
+  "DriverVersion": "6.0.9239.1",
+  "HardWareID": [
+   "HDAUDIO\\FUNC_01&VEN_10EC&DEV_0897"
+  ],
+  "InfName": "oem7.inf",
+  "IsSigned": true
+ },
+ {
+  "DeviceClass": "HDC",
+  "DeviceID": "PCI\\VEN_8086&DEV_8C82&SUBSYS_72708086&REV_05\\3&11583659&1&FA",
+  "DeviceName": "Standard SATA AHCI Controller",
+  "DriverDate": "20200619000000.000000+000",
+  "DriverProviderName": "Microsoft",
+  "DriverVersion": "",
+  "HardWareID": [
+   "PCI\\VEN_8086&DEV_8C82"
+  ],
+  "InfName": "oem3.inf",
+  "IsSigned": true
+ },
+ {
+  "DeviceClass": "USB",
+  "DeviceID": "USB\\VID_9999&PID_0001\\5&2CF9E6B&0&9",
+  "DeviceName": "Contoso Test Widget",
+  "DriverDate": "2019-05-05T00:00:00",
+  "DriverProviderName": "Contoso Labs",
+  "DriverVersion": "1.0.0.0",
+  "HardWareID": [
+   "USB\\VID_9999&PID_0001"
+  ],
+  "InfName": "oem77.inf",
+  "IsSigned": false
+ },
+ {
+  "DeviceClass": "USB",
+  "DeviceID": "USB\\ROOT_HUB30\\4&1111AAAA&0&0",
+  "DeviceName": "Generic USB Hub (Port 1)",
+  "DriverDate": "/Date(1688169600000)/",
+  "DriverProviderName": "Microsoft",
+  "DriverVersion": "10.0.22621.2506",
+  "HardWareID": [
+   "USB\\ROOT_HUB30"
+  ],
+  "InfName": "usbhub3.inf",
+  "IsSigned": true
+ },
+ {
+  "DeviceClass": "USB",
+  "DeviceID": "USB\\ROOT_HUB30\\4&2222BBBB&0&0",
+  "DeviceName": "Generic USB Hub (Port 2)",
+  "DriverDate": "/Date(1688169600000)/",
+  "DriverProviderName": "Microsoft",
+  "DriverVersion": "10.0.22621.2506",
+  "HardWareID": [
+   "USB\\ROOT_HUB30"
+  ],
+  "InfName": "usbhub3.inf",
+  "IsSigned": true
+ },
+ {
+  "DeviceClass": "Bluetooth",
+  "DeviceID": "USB\\VID_8087&PID_0026\\5&2CF9E6B&0&10",
+  "DeviceName": "Intel(R) Wireless Bluetooth(R)",
+  "DriverDate": "2021-03-15T00:00:00",
+  "DriverProviderName": "Intel Corporation",
+  "DriverVersion": "22.40.0.2",
+  "HardWareID": [
+   "USB\\VID_8087&PID_0026"
+  ],
+  "InfName": "oem31.inf",
+  "IsSigned": true
+ },
+ {
+  "DeviceClass": "Mouse",
+  "DeviceID": "ACPI\\SYN3602\\0",
+  "DeviceName": "Synaptics TouchPad",
+  "DriverDate": "2022-11-02",
+  "DriverProviderName": "Synaptics",
+  "DriverVersion": "19.5.35.54",
+  "HardWareID": [
+   "ACPI\\SYN3602"
+  ],
+  "InfName": "oem55.inf",
+  "IsSigned": true
+ }
+]
