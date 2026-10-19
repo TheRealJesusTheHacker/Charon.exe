@@ -87,9 +87,144 @@ class FakeSearcher:
         self._updates = updates or []
         self._error = error
         self.criteria_seen: list[str] = []
+        self.keep_objects_seen: list[bool] = []
 
-    def search(self, criteria):
+    def search(self, criteria, keep_objects=False):
         self.criteria_seen.append(criteria)
+        self.keep_objects_seen.append(keep_objects)
         if self._error is not None:
             raise self._error
-        return [dict(u) for u in self._updates]
+        out = []
+        for u in self._updates:
+            raw = dict(u)
+            if not keep_objects:
+                raw.pop("com_update", None)
+            out.append(raw)
+        return out
+
+
+class FakeComUpdate:
+    """A stand-in WUA IUpdate object, shaped for both seams.
+
+    Carries the COM-style attribute names the search seam reads
+    (``Title``, ``DriverModel``, …) and what the download seam needs
+    (``RequiresUserAcceptance``, ``AcceptEula``, ``IsDownloaded``,
+    ``MaxDownloadSize``). Records every acceptance.
+    """
+
+    def __init__(
+        self,
+        title,
+        driver_model="",
+        driver_class="",
+        provider="",
+        version="",
+        driver_date=None,
+        hardware_ids=(),
+        requires_eula=False,
+        accept_eula_raises=False,
+        max_download_size=None,
+        is_downloaded=True,
+    ):
+        self.Title = title
+        self.DriverModel = driver_model
+        self.DriverClass = driver_class
+        self.DriverManufacturer = provider
+        self.DriverVersion = version
+        self.DriverVerDate = driver_date
+        self.DriverHardwareID = hardware_ids[0] if hardware_ids else ""
+        self.hardware_ids = list(hardware_ids)
+        self.RequiresUserAcceptance = requires_eula
+        self._accept_eula_raises = accept_eula_raises
+        self.eula_accepted = False
+        self.MaxDownloadSize = max_download_size
+        self.IsDownloaded = is_downloaded
+
+    def AcceptEula(self):
+        if self._accept_eula_raises:
+            raise RuntimeError("fake EULA refusal")
+        self.eula_accepted = True
+
+    def raw(self):
+        """The raw search mapping this object would arrive as."""
+        return {
+            "title": self.Title,
+            "driver_model": self.DriverModel,
+            "driver_class": self.DriverClass,
+            "provider": self.DriverManufacturer,
+            "version": self.DriverVersion,
+            "driver_date": self.DriverVerDate,
+            "hardware_ids": list(self.hardware_ids),
+            "com_update": self,
+        }
+
+
+class FakeDownloadEntry:
+    """One fake IUpdateDownloadResult: a code and an HRESULT."""
+
+    def __init__(self, result_code, hresult=0):
+        self.ResultCode = result_code
+        self.HResult = hresult
+
+
+class FakeComSession:
+    """A stand-in Microsoft.Update.Session for the download seam.
+
+    Serves exactly the downloader machinery and records the calls.
+    Any other attribute access is a loud failure — a test double must
+    never quietly bless an unexpected capability (no installer, ever).
+    """
+
+    def __init__(self, codes_by_title=None, default_code=2):
+        self.codes_by_title = dict(codes_by_title or {})
+        self.default_code = default_code
+        self.downloader_constructed = 0
+        self.download_calls: list[list] = []
+
+    def CreateUpdateCollection(self):
+        return _FakeCollection()
+
+    def CreateUpdateDownloader(self):
+        self.downloader_constructed += 1
+        return _FakeComDownloader(self)
+
+    def __getattr__(self, name):
+        raise AssertionError(f"unexpected session member requested: {name}")
+
+
+class _FakeCollection:
+    def __init__(self):
+        self.items = []
+
+    def Add(self, item):
+        self.items.append(item)
+
+
+_UNSET = object()
+
+
+class _FakeComDownloader:
+    """The downloader half of FakeComSession (records; serves codes)."""
+
+    def __init__(self, session):
+        self._session = session
+        self.Updates = None
+        self._sink = _UNSET
+
+    def Download(self, callback=_UNSET):
+        self._sink = callback
+        updates = list(self.Updates.items) if self.Updates else []
+        self._session.download_calls.append(updates)
+        return None
+
+    def GetUpdateResult(self, index):
+        updates = list(self.Updates.items) if self.Updates else []
+        title = updates[index].Title
+        code = self._session.codes_by_title.get(
+            title, self._session.default_code
+        )
+        hresult = 0 if code in (2, 3) else -2145124300
+        return FakeDownloadEntry(code, hresult)
+
+    def __getattr__(self, name):
+        raise AssertionError(f"unexpected downloader member requested: {name}")
