@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# PyInstaller
+build/
+dist/
+*.manifest
+
+# Charon working data (never commit machine data or downloaded drivers)
+*.log
+driver-downloads/
+manifests/
+
+# OS / editor
+Thumbs.db
+Desktop.ini
+.vscode/
+.idea/
