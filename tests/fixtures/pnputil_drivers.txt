@@ -1,0 +1,41 @@
+Microsoft PnP Utility
+
+Published Name:     oem42.inf
+Original Name:      netwtw08.inf
+Provider Name:      Intel
+Class Name:         Net
+Class GUID:         {4d36e972-e325-11ce-bfc1-08002be10318}
+Driver Version:     03/15/2021 22.40.0.7
+Signer Name:        Microsoft Windows Hardware Compatibility Publisher
+
+Published Name:     oem18.inf
+Original Name:      nv_dispu.inf
+Provider Name:      NVIDIA
+Class Name:         Display
+Class GUID:         {4d36e968-e325-11ce-bfc1-08002be10318}
+Driver Version:     06/14/2023 31.0.15.3640
+Signer Name:        Microsoft Windows Hardware Compatibility Publisher
+
+Published Name:     oem7.inf
+Original Name:      hdxrt.inf
+Provider Name:      Realtek Semiconductor Corp.
+Class Name:         Media
+Class GUID:         {4d36e96c-e325-11ce-bfc1-08002be10318}
+Driver Version:     09/21/2021 6.0.9239.1
+Signer Name:        Microsoft Windows Hardware Compatibility Publisher
+
+Published Name:     oem55.inf
+Original Name:      synpd.inf
+Provider Name:      Synaptics
+Class Name:         Mouse
+Class GUID:         {4d36e96f-e325-11ce-bfc1-08002be10318}
+Driver Version:     10/20/2022 19.5.35.31
+Signer Name:        Microsoft Windows Hardware Compatibility Publisher
+
+Published Name:     oem99.inf
+Original Name:      contosoprint.inf
+Provider Name:      Contoso
+Class Name:         Printer
+Class GUID:         {4d36e979-e325-11ce-bfc1-08002be10318}
+Driver Version:     01/30/2020 10.0.0.0
+Signer Name:        Microsoft Windows Hardware Compatibility Publisher
