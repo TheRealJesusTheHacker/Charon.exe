@@ -125,6 +125,35 @@ class ScanReport:
     # ------------------------------------------------------------------
     # Serialization
     # ------------------------------------------------------------------
+    @classmethod
+    def from_dict(cls, data: dict) -> "ScanReport":
+        """Rebuild a report from :meth:`to_dict` output.
+
+        Defensive about everything except the shape itself: a saved
+        scan report is user-facing data a human may have moved or
+        trimmed, so missing fields degrade to empties rather than
+        raising. Used by ``charon download --from-report``.
+        """
+        generated = data.get("generated_at") or ""
+        try:
+            generated_at = datetime.fromisoformat(
+                str(generated).replace("Z", "+00:00")
+            )
+        except ValueError:
+            generated_at = datetime.now().astimezone()
+        devices = []
+        for raw in data.get("devices") or []:
+            if not isinstance(raw, dict):
+                continue
+            devices.append(_device_from_dict(raw))
+        return cls(
+            generated_at=generated_at,
+            computer=str(data.get("computer") or ""),
+            sources=[str(s) for s in data.get("sources") or []],
+            warnings=[str(w) for w in data.get("warnings") or []],
+            devices=devices,
+        )
+
     def to_dict(self) -> dict:
         return {
             "generated_at": self.generated_at.astimezone(timezone.utc)
@@ -181,6 +210,58 @@ def _device_to_dict(d: DeviceReport) -> dict:
         "notes": list(d.notes),
         "update": _update_to_dict(d.update) if d.update else None,
     }
+
+
+def _driver_from_dict(data: dict) -> InstalledDriver:
+    return InstalledDriver(
+        device_name=str(data.get("device_name") or "Unknown device"),
+        device_class=str(data.get("device_class") or ""),
+        provider=str(data.get("provider") or ""),
+        version=str(data.get("version") or ""),
+        driver_date=parse_driver_date(data.get("driver_date")),
+        inf_name=str(data.get("inf_name") or ""),
+        device_id=str(data.get("device_id") or ""),
+        hardware_ids=tuple(
+            normalize_hardware_id(str(h))
+            for h in data.get("hardware_ids") or []
+            if str(h).strip()
+        ),
+        is_signed=data.get("is_signed")
+        if isinstance(data.get("is_signed"), bool)
+        else None,
+        notes=tuple(str(n) for n in data.get("notes") or []),
+    )
+
+
+def _update_from_dict(data: dict) -> UpdateCandidate:
+    return UpdateCandidate(
+        title=str(data.get("title") or ""),
+        driver_model=str(data.get("driver_model") or ""),
+        driver_class=str(data.get("driver_class") or ""),
+        provider=str(data.get("provider") or ""),
+        version=str(data.get("version") or ""),
+        driver_date=parse_driver_date(data.get("driver_date")),
+        hardware_ids=tuple(
+            normalize_hardware_id(str(h))
+            for h in data.get("hardware_ids") or []
+            if str(h).strip()
+        ),
+    )
+
+
+def _device_from_dict(data: dict) -> DeviceReport:
+    update_raw = data.get("update")
+    return DeviceReport(
+        driver=_driver_from_dict(data.get("driver") or {}),
+        status=str(data.get("status") or STATUS_UNKNOWN),
+        update=_update_from_dict(update_raw)
+        if isinstance(update_raw, dict)
+        else None,
+        confidence=str(data.get("confidence") or CONFIDENCE_NONE),
+        basis=str(data.get("basis") or BASIS_NONE),
+        explanation=str(data.get("explanation") or ""),
+        notes=tuple(str(n) for n in data.get("notes") or []),
+    )
 
 
 # ----------------------------------------------------------------------
