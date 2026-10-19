@@ -1,0 +1,77 @@
+[
+ {
+  "driver_class": "Net",
+  "driver_date": "2024-05-06T00:00:00",
+  "driver_model": "Intel(R) Wi-Fi 6 AX201 160MHz",
+  "hardware_ids": [
+   "PCI\\VEN_8086&DEV_34F0"
+  ],
+  "provider": "Intel",
+  "title": "Intel Net Driver Update (23.60.1.2)",
+  "version": "23.60.1.2"
+ },
+ {
+  "driver_class": "Display",
+  "driver_date": "2023-06-14T00:00:00",
+  "driver_model": "NVIDIA GeForce RTX 3060",
+  "hardware_ids": [
+   "PCI\\VEN_10DE&DEV_2504"
+  ],
+  "provider": "NVIDIA",
+  "title": "NVIDIA Display Driver Update (31.0.15.3640)",
+  "version": "31.0.15.3640"
+ },
+ {
+  "driver_class": "Media",
+  "driver_date": "2023-01-17T00:00:00",
+  "driver_model": "Realtek High Definition Audio",
+  "hardware_ids": [],
+  "provider": "Realtek Semiconductor Corp.",
+  "title": "Realtek Media Driver Update (6.0.9239.1)",
+  "version": "6.0.9239.1"
+ },
+ {
+  "driver_class": "HDC",
+  "driver_date": "2023-02-14T00:00:00",
+  "driver_model": "Standard SATA AHCI Controller",
+  "hardware_ids": [
+   "PCI\\VEN_8086&DEV_8C82"
+  ],
+  "provider": "Intel",
+  "title": "Intel HDC Driver Update",
+  "version": ""
+ },
+ {
+  "driver_class": "USB",
+  "driver_date": "2023-11-08T00:00:00",
+  "driver_model": "USB Root Hub (USB 3.0)",
+  "hardware_ids": [
+   "USB\\ROOT_HUB30"
+  ],
+  "provider": "Microsoft",
+  "title": "Microsoft USB Driver Update (10.0.22621.3000)",
+  "version": "10.0.22621.3000"
+ },
+ {
+  "driver_class": "Mouse",
+  "driver_date": "2020-04-09T00:00:00",
+  "driver_model": "Synaptics TouchPad",
+  "hardware_ids": [
+   "ACPI\\SYN3602"
+  ],
+  "provider": "Synaptics",
+  "title": "Synaptics Mouse Driver Update (19.3.4.219)",
+  "version": "19.3.4.219"
+ },
+ {
+  "driver_class": "Net",
+  "driver_date": "2022-08-30T00:00:00",
+  "driver_model": "Qualcomm Atheros AR938x Wireless Network Adapter",
+  "hardware_ids": [
+   "PCI\\VEN_168C&DEV_0036"
+  ],
+  "provider": "Qualcomm Atheros",
+  "title": "Qualcomm Atheros Net Driver Update (12.0.0.9)",
+  "version": "12.0.0.9"
+ }
+]
