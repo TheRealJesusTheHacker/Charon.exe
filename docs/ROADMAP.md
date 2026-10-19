@@ -45,7 +45,7 @@ stops the run before anything is applied — by design, not by error handling.
   on-hardware verification** (scan aroura; compare against Device
   Manager, pnputil, and Windows Update's own offered drivers).
 
-## Phase 2 — Update sourcing
+## Phase 2 — Update sourcing & download staging
 
 - Primary channel: the **Windows Update Agent API** — the legitimate route
   by which Microsoft itself offers driver updates for the installed hardware.
@@ -54,8 +54,44 @@ stops the run before anything is applied — by design, not by error handling.
   not a failure).
 - **Never** scrape third-party "driver download" sites: wrong-driver and
   malware risk, and beneath the product's standard.
-- Downloads staged to a Charon-owned folder, hash-verified where the
-  channel provides hashes, applied to nothing yet.
+- Downloads are staged, applied to nothing yet. Staging truth: WUA
+  `Download()` stages into the **Windows Update cache** — the channel
+  offers no Charon-owned target folder, and this plan no longer
+  pretends otherwise. Charon's own **download ledger** is the record
+  of what is staged.
+
+**Status: BUILT (2026-10-19).** Download staging is complete:
+
+- `charon/wua_download.py` — the one download seam: builds the WUA
+  downloader, downloads a batch, reads every per-update verdict
+  individually (succeeded / succeeded-with-errors / failed / aborted).
+  An update whose license terms require acceptance gets them accepted
+  explicitly, and the acceptance is recorded per update. A "success"
+  Windows Update claims but didn't stage counts as failed. There is
+  no installer capability in this module — or anywhere in the package.
+- `charon/download.py` — pure logic: the download plan (from a scan
+  report's outdated entries, with explicit subset selection for the
+  future UI's driver picker), **revalidation against a fresh search**
+  run moments before the fetch — an update that no longer resolves is
+  marked `no_longer_available` and *nothing is downloaded in its
+  place* — the progress-event stream Phase 5 will animate, and the
+  download ledger (atomic writes; per update: title, version, device,
+  result, EULA acceptance, size, timestamp).
+- `python -m charon download` — fresh scan in-session → plan →
+  revalidate → stage → ledger + an honest summary ("3 of 4 drivers
+  downloaded; the Bluetooth driver failed — nothing was installed").
+  `--from-report <scan.json>` stages from an exported scan (still
+  revalidated fresh). Exit code 2 only when a download couldn't begin.
+- Safety invariants v2: installer machinery and restore-point
+  machinery remain forbidden package-wide; download capability is
+  source-pinned to its one seam; a behavioral test drives a full
+  staged download through recording fakes and pins the exact
+  search + download call sequence with zero install/restore calls.
+  The scan path is byte-for-byte as read-only as Phase 1 proved it.
+- Test suite green on Linux from fake WUA seams. **Pending: Windows
+  on-hardware verification** (stage real drivers on aroura; confirm
+  Device Manager versions unchanged, ledger matches the cache, an
+  interrupted download is reported honestly).
 
 ## Phase 3 — Restore-point integration (THE TOLL)
 
@@ -70,6 +106,40 @@ stops the run before anything is applied — by design, not by error handling.
 - Mind Windows' restore-point frequency limits (a recent point may make a
   new one silently skipped by the OS) — verification must catch this; a
   skipped toll is an unpaid toll.
+
+**Status: BUILT (2026-10-19).** The toll machinery and the gate are
+complete:
+
+- `charon/toll.py` — the only restore-point seam: a pinned PowerShell
+  probe (administrator? System Protection state, read from shadow
+  storage), `Checkpoint-Computer` creation, and enumeration, all
+  behind one runner. `charon toll` pays the toll standalone and
+  prints the receipt.
+- **Verification is enumeration, never trust.** A point pays the toll
+  only if it carries this run's unique marker (run timestamp + token,
+  so yesterday's point can never be passed off as today's) AND is
+  stamped no earlier than this run's creation call (2s of clock
+  tolerance — a point is stamped while the call runs). Windows' 24-hour
+  silent skip therefore reads exactly as what it is: **unpaid**. The
+  skip trap is caught by design and pinned by test.
+- Preconditions are designed states, detected before creation:
+  System Protection off → plain-language refusal with the how-to —
+  and Charon never flips that setting itself; not-an-administrator →
+  plain-language refusal. Protection state the probe cannot determine
+  is not guessed at: creation is attempted and verification decides.
+  Every failure mode — skipped, undatable, unreadable, unrecordable —
+  resolves to `TollUnpaid`. The ferry fails toward not moving.
+- `require_paid_toll()` is the gate Phase 4 must call first, every
+  time: the candidate record (session, else the ledger — the toll is
+  recorded in the same ledger Phase 2 keeps) is **re-verified against
+  the PC** before the gate opens; a deleted point closes it again.
+- Safety invariants were rewritten in the open for this phase:
+  restore-point capability is confined to `toll.py`, install
+  capability remains forbidden everywhere. 26 toll tests green on
+  Linux (fake seam + recording runner, argv pinned byte-for-byte);
+  the full suite stands at 131. **Pending: Windows on-hardware
+  verification** (see the phase report: real creation, the two-points-
+  back-to-back skip-trap test, the protection-off refusal, timing).
 
 ## Phase 4 — Apply engine
 
