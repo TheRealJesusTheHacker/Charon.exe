@@ -142,15 +142,15 @@ class ScanReport:
         except ValueError:
             generated_at = datetime.now().astimezone()
         devices = []
-        for raw in data.get("devices") or []:
+        for raw in _list_or_empty(data.get("devices")):
             if not isinstance(raw, dict):
                 continue
             devices.append(_device_from_dict(raw))
         return cls(
             generated_at=generated_at,
             computer=str(data.get("computer") or ""),
-            sources=[str(s) for s in data.get("sources") or []],
-            warnings=[str(w) for w in data.get("warnings") or []],
+            sources=[str(s) for s in _list_or_empty(data.get("sources"))],
+            warnings=[str(w) for w in _list_or_empty(data.get("warnings"))],
             devices=devices,
         )
 
@@ -212,7 +212,17 @@ def _device_to_dict(d: DeviceReport) -> dict:
     }
 
 
+def _list_or_empty(value) -> list:
+    """The value as a list, or empty — a saved report is user-facing
+    data that may have been trimmed by hand, so a field of the wrong
+    type (an int where a list belongs, a bare string) degrades to
+    empty here instead of raising TypeError mid-load."""
+    return list(value) if isinstance(value, (list, tuple)) else []
+
+
 def _driver_from_dict(data: dict) -> InstalledDriver:
+    if not isinstance(data, dict):
+        data = {}
     return InstalledDriver(
         device_name=str(data.get("device_name") or "Unknown device"),
         device_class=str(data.get("device_class") or ""),
@@ -223,17 +233,19 @@ def _driver_from_dict(data: dict) -> InstalledDriver:
         device_id=str(data.get("device_id") or ""),
         hardware_ids=tuple(
             normalize_hardware_id(str(h))
-            for h in data.get("hardware_ids") or []
+            for h in _list_or_empty(data.get("hardware_ids"))
             if str(h).strip()
         ),
         is_signed=data.get("is_signed")
         if isinstance(data.get("is_signed"), bool)
         else None,
-        notes=tuple(str(n) for n in data.get("notes") or []),
+        notes=tuple(str(n) for n in _list_or_empty(data.get("notes"))),
     )
 
 
 def _update_from_dict(data: dict) -> UpdateCandidate:
+    if not isinstance(data, dict):
+        data = {}
     return UpdateCandidate(
         title=str(data.get("title") or ""),
         driver_model=str(data.get("driver_model") or ""),
@@ -243,16 +255,21 @@ def _update_from_dict(data: dict) -> UpdateCandidate:
         driver_date=parse_driver_date(data.get("driver_date")),
         hardware_ids=tuple(
             normalize_hardware_id(str(h))
-            for h in data.get("hardware_ids") or []
+            for h in _list_or_empty(data.get("hardware_ids"))
             if str(h).strip()
         ),
     )
 
 
 def _device_from_dict(data: dict) -> DeviceReport:
+    if not isinstance(data, dict):
+        data = {}
     update_raw = data.get("update")
+    driver_raw = data.get("driver")
     return DeviceReport(
-        driver=_driver_from_dict(data.get("driver") or {}),
+        driver=_driver_from_dict(
+            driver_raw if isinstance(driver_raw, dict) else {}
+        ),
         status=str(data.get("status") or STATUS_UNKNOWN),
         update=_update_from_dict(update_raw)
         if isinstance(update_raw, dict)
@@ -260,7 +277,7 @@ def _device_from_dict(data: dict) -> DeviceReport:
         confidence=str(data.get("confidence") or CONFIDENCE_NONE),
         basis=str(data.get("basis") or BASIS_NONE),
         explanation=str(data.get("explanation") or ""),
-        notes=tuple(str(n) for n in data.get("notes") or []),
+        notes=tuple(str(n) for n in _list_or_empty(data.get("notes"))),
     )
 
 
@@ -286,6 +303,12 @@ def parse_version(text: str | None) -> tuple[int, ...] | None:
             # A non-numeric component (e.g. "1.2b3") — keep what we have
             # only if something numeric came before it.
             break
+        if len(digits.group(0)) > 18:
+            # An absurd component (no real driver version has one):
+            # int() itself refuses digit strings past a few thousand
+            # characters, so treat the whole version as unparseable
+            # — "unknown", the honest answer — instead of raising.
+            return None
         parts.append(int(digits.group(0)))
     return tuple(parts) if parts else None
 
