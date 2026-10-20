@@ -193,9 +193,18 @@ def _scan_command(args) -> int:
     print(render_report(report))
     if args.json:
         path = Path(args.json)
-        path.write_text(
-            json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8"
-        )
+        try:
+            path.write_text(
+                json.dumps(report.to_dict(), indent=2) + "\n", encoding="utf-8"
+            )
+        except OSError as exc:
+            log.error("report export failed: %s", exc)
+            print(
+                f"\nThe scan worked, but Charon couldn't write the "
+                f"report file to {path}. Check the path is right "
+                f"and the folder is writable, then run the scan again."
+            )
+            return EXIT_DESIGNED_FAILURE
         print(f"\nFull report written to {path}")
     return EXIT_OK
 
@@ -215,11 +224,13 @@ def load_report(path) -> ScanReport:
             "fresh one with: python -m charon scan --json <file>",
             detail=f"{type(exc).__name__}: {exc}",
         ) from exc
-    if not isinstance(data, dict) or "devices" not in data:
+    if not isinstance(data, dict) or not isinstance(
+        data.get("devices"), list
+    ):
         raise InventoryUnavailable(
             "That file doesn't look like a Charon scan report. "
             "Export one with: python -m charon scan --json <file>",
-            detail="missing 'devices' in report JSON",
+            detail="missing or non-list 'devices' in report JSON",
         )
     return ScanReport.from_dict(data)
 
@@ -363,6 +374,18 @@ def _download_command(args) -> int:
     except WuaDownloadUnavailable as exc:
         log.error("download unavailable: %s", exc.detail or exc)
         print(exc.user_message)
+        return EXIT_DESIGNED_FAILURE
+    except OSError as exc:
+        # The remaining way a run can fail in the open is writing
+        # its records (the ledger) — a full disk or a folder Charon
+        # can't write to. Designed failure, not a traceback; and
+        # still nothing was installed.
+        log.error("download run records failed: %s", exc)
+        print(
+            "Charon couldn't finish writing its download records, "
+            "so this run counts as not completed. Nothing was "
+            "installed — check the disk has room and try again."
+        )
         return EXIT_DESIGNED_FAILURE
 
     print("")
