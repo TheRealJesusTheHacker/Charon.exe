@@ -5,4 +5,4 @@ Nobody crosses without paying the toll: a restore point, created and
 verified before any update is applied.
 """
 
-__version__ = "0.5.0"
+__version__ = "1.0.0"
