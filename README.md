@@ -172,15 +172,27 @@ The workflow is fixed in the code, not suggested by it:
 
 ## Installation
 
-**There is no installer and no portable edition yet, and there are
-no GitHub releases** — Charon runs from source. (A single
-self-installing `Charon.exe` and a portable edition for the Sentinel
-IT Toolkit USB are on the roadmap's backlog; see
+**The portable edition's packaging is ready — the first portable
+ships with the next release.** There are no GitHub releases yet,
+so today Charon still runs from source (below). The portable
+build itself is wired and committed in this repository, under
+`packaging/`: a PyInstaller one-folder spec, the pinned CI
+dependency list, the portable readme that will ship inside the
+zip, and the release workflow (`.github/workflows/build-release.yml`)
+that — on every published release — runs the full test suite,
+builds the folder, smoke-tests the packaged window, and attaches
+`CharonPortable.zip` and `SHA256SUMS.txt` to the release. When
+the first release is published, the portable story will be:
+download `CharonPortable.zip`, unzip it anywhere — a folder on
+the PC or the Sentinel IT Toolkit USB — open the `Charon`
+folder inside, and double-click `Charon.exe`. No install, and
+no Python on the machine. (A single self-installing
+`Charon.exe` stays on the roadmap's backlog; see
 [Status & roadmap](#status--roadmap).) Anyone who tells you to
 download a prebuilt Charon binary today is not describing this
 repository.
 
-What you need:
+Running from source — the way to run Charon today. What you need:
 
 - A **Windows PC** to do real driver work. (Charon's logic and its
   test suite run anywhere; the inventory, Windows Update, and
@@ -193,8 +205,9 @@ What you need:
   the `Microsoft.Update.Session` COM object through it.
 - **pytest** — only to run the test suite.
 
-This repository ships no `requirements.txt` or packaging file yet,
-so the steps are exactly:
+This repository ships no end-user `requirements.txt`, so the
+source steps are exactly: (The pinned file under `packaging/`
+is for the release pipeline's builds, not for source installs.)
 
 ```bat
 git clone https://github.com/TheRealJesusTheHacker/Charon.exe.git
@@ -412,6 +425,16 @@ roadmap on 2026-10-20. The full phase-by-phase record — including
 what each phase's audit pinned — lives in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
+**Portable packaging — ready, first portable ships with the next
+release.** The portable edition is no longer backlog: the
+PyInstaller one-folder spec, the pinned CI dependency list, the
+portable readme, and the release workflow that builds
+`CharonPortable.zip` and its `SHA256SUMS.txt` are all committed
+under `packaging/` and `.github/workflows/` (see
+[docs/ROADMAP.md](docs/ROADMAP.md)). No release has been cut with
+them yet, so the run-from-source install above is still the way
+to run Charon today.
+
 **Pending, stated plainly: Windows on-hardware verification.**
 Every phase's engine is proven against recorded fixtures and mocked
 Windows seams, with the suite green on Linux. Running the complete
@@ -428,7 +451,6 @@ What comes after that is only what the roadmap's backlog lists:
 
 - A single self-installing `Charon.exe` (one file, one permission
   prompt, self-verifying setup).
-- A portable edition for the Sentinel IT Toolkit USB.
 - Driver backup/export — a passenger manifest the owner can keep.
 - Scheduled scan reminders ("the ferryman returns monthly").
 - A signed update-feed / vendor-catalog expansion beyond Windows
