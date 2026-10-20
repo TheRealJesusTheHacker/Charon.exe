@@ -23,10 +23,14 @@ Windows'.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
+import secrets
 import sys
+import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -317,10 +321,25 @@ def stage_plan(
                 f"{len(live)} updates"
             )
         for item, outcome in zip(live, fetched):
+            status = outcome.status
+            detail = outcome.detail
+            if status not in LEDGER_STATUSES:
+                # A seam that answers in a vocabulary Charon doesn't
+                # know has not staged anything Charon can vouch for:
+                # count it as failed, never as (say) withdrawn — the
+                # summary and the ledger counts must stay honest.
+                detail = (
+                    f"{detail} " if detail else ""
+                ) + (
+                    f"The download step returned an unrecognized "
+                    f"result ({status!r}); Charon counts that as "
+                    f"not downloaded."
+                )
+                status = "failed"
             by_entry[id(item.entry)] = StagedResult(
                 entry=item.entry,
-                status=outcome.status,
-                detail=outcome.detail,
+                status=status,
+                detail=detail,
                 eula_accepted=outcome.eula_accepted,
                 size_bytes=outcome.size_bytes,
                 result_code=outcome.result_code,
@@ -460,6 +479,132 @@ def _result_row(result: StagedResult, moment: datetime) -> dict:
     }
 
 
+# ----------------------------------------------------------------------
+# Ledger write serialization
+#
+# The ledger is one file shared by the download runs (here) and the
+# toll records (``toll.py``). Atomic replace alone does not make a
+# load → modify → rewrite cycle safe when two Charon processes (or
+# threads) write at once: both used to stage through the SAME fixed
+# ``ledger.json.tmp`` sibling — one process's replace then moved the
+# other's temp file out from under it (FileNotFoundError) — and the
+# last writer silently erased the other's appended records. Writers
+# now hold an OS-level lock on a ``.lock`` sibling for the whole
+# cycle (the kernel releases it if a holder dies, so no stale-lock
+# cleanup is ever needed), and each writer stages through a unique
+# temp name. The lock is best-effort: if it cannot be taken, the
+# write still proceeds — a lost race then costs history, never
+# safety, because every reader tolerates a missing record.
+# ----------------------------------------------------------------------
+
+_ledger_lock_guard = threading.Lock()
+_ledger_lock_holds: dict[tuple[str, int], int] = {}
+
+
+@contextlib.contextmanager
+def _ledger_lock(path: Path):
+    """Hold the ledger's write lock for one load-modify-write cycle.
+
+    Re-entrant for the holding thread; distinct threads and
+    processes contend on the OS lock itself.
+    """
+    path = Path(path)
+    key = (str(path), threading.get_ident())
+    with _ledger_lock_guard:
+        held = _ledger_lock_holds.get(key, 0)
+        _ledger_lock_holds[key] = held + 1
+    fd = None
+    locked = False
+    try:
+        if not held:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                fd = os.open(
+                    path.with_name(path.name + ".lock"),
+                    os.O_CREAT | os.O_RDWR,
+                    0o644,
+                )
+            except OSError:
+                fd = None  # proceed unlocked; the write itself decides
+            if fd is not None:
+                try:
+                    if sys.platform.startswith("win"):
+                        import msvcrt
+
+                        if os.fstat(fd).st_size == 0:
+                            os.write(fd, b"\0")
+                        for _attempt in range(200):
+                            try:
+                                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                                locked = True
+                                break
+                            except OSError:
+                                time.sleep(0.05)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(fd, fcntl.LOCK_EX)
+                        locked = True
+                except OSError:
+                    log.warning(
+                        "ledger lock for %s unavailable; writing unlocked",
+                        path,
+                    )
+        yield
+    finally:
+        if fd is not None:
+            try:
+                if locked:
+                    if sys.platform.startswith("win"):
+                        import msvcrt
+
+                        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                    else:
+                        import fcntl
+
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            os.close(fd)
+        with _ledger_lock_guard:
+            depth = _ledger_lock_holds.get(key, 1) - 1
+            if depth > 0:
+                _ledger_lock_holds[key] = depth
+            else:
+                _ledger_lock_holds.pop(key, None)
+
+
+def _atomic_write_ledger(path: Path, ledger: dict) -> None:
+    """Rewrite the ledger whole: unique temp sibling + ``os.replace``.
+
+    A crash mid-write can never leave a torn ledger behind: the old
+    record survives whole or the new one lands whole. The replace is
+    retried briefly — on Windows a reader holding the file open for
+    a moment can make the first replace attempt fail.
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(
+        f"{path.name}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+    )
+    try:
+        tmp.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
+        last_exc: OSError | None = None
+        for _attempt in range(5):
+            try:
+                os.replace(tmp, path)
+                return
+            except OSError as exc:
+                last_exc = exc
+                time.sleep(0.05)
+        raise last_exc  # type: ignore[misc]
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def append_run_to_ledger(
     path: Path,
     results: list[StagedResult],
@@ -472,11 +617,13 @@ def append_run_to_ledger(
 
     The file is rewritten via a temp sibling + ``os.replace``, so a
     crash mid-write can never leave a torn ledger behind: the old
-    record survives whole or the new one lands whole.
+    record survives whole or the new one lands whole. Concurrent
+    writers are serialized with :func:`_ledger_lock`, so an
+    interleaved toll record is never erased by this rewrite (nor
+    this run by a toll's).
     """
     finished = finished_at or _utc_now()
     started = started_at or finished
-    ledger = load_ledger(path)
     run = {
         "started_at": _iso(started),
         "finished_at": _iso(finished),
@@ -493,11 +640,10 @@ def append_run_to_ledger(
         },
         "entries": [_result_row(r, finished) for r in results],
     }
-    ledger.setdefault("format", LEDGER_FORMAT_VERSION)
-    ledger["runs"].append(run)
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    with _ledger_lock(path):
+        ledger = load_ledger(path)
+        ledger.setdefault("format", LEDGER_FORMAT_VERSION)
+        ledger["runs"].append(run)
+        _atomic_write_ledger(path, ledger)
     return run
