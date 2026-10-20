@@ -85,7 +85,19 @@ jobs:
           $watchlist = "win32com", "pythoncom", "pywintypes", "PySide6"
           $failed = $false
           foreach ($warn in $warnFiles) {
-            $hits = Select-String -Path $warn.FullName -Pattern ($watchlist -join "|")
+            # Only an EXACT watchlist module missing fails the build.
+            # A bare substring grep also matches lines that merely
+            # mention a watchlist name — e.g. the benign
+            # "missing module named 'win32com.gen_py' - imported by
+            # win32com (conditional, optional)" (gen_py is a
+            # generated cache that is normally absent, while
+            # win32com itself was found) — and lines naming a
+            # watchlist module as the importer of something else.
+            # Anchor to "missing module named '<module>' -" so a
+            # dropped top-level module still fails here, and a
+            # submodule or a mention does not.
+            $pattern = "missing module named '?(" + ($watchlist -join "|") + ")'? -"
+            $hits = Select-String -Path $warn.FullName -Pattern $pattern
             if ($hits) {
               Write-Host "PyInstaller could not find modules on the lazy-import watchlist (in $($warn.FullName)):"
               $hits | ForEach-Object { Write-Host $_.Line }
