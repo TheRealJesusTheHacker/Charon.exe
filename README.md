@@ -82,7 +82,8 @@ python -m charon scan --json PATH  # also write the full report as JSON
 python -m charon download          # stage outdated drivers (installs nothing)
 python -m charon toll              # pay the toll: create + verify a restore point
 python -m charon apply             # the crossing: install the staged drivers
-python -m charon --version         # 0.5.0
+python -m charon gui               # the window: the whole crossing, guided
+python -m charon --version         # 1.0.0
 ```
 
 The scan is **read-only**: it downloads nothing, installs nothing, and
@@ -173,10 +174,15 @@ re-validated against a fresh search, the toll presented at
 the first install, never taken on trust — then one driver at a
 time, a device check after each, the line stopped and the way back
 named if a crossing fails, and any restart reported rather than
-forced. The full test suite (193 tests, recorded fixtures and fake
-Windows seams) is green; Windows on-hardware verification comes
-next. Phase 5 — the animated UI — follows the roadmap, in the
-Crossing's order.
+forced. And `python -m charon gui` opens the window: the whole
+crossing as one guided, animated journey — the sweep, the river,
+the stamped toll ticket — running this same pipeline, with the
+crossing locked until the toll verifies and the engine re-checking
+the gate behind the button. The full test suite (217 tests,
+recorded fixtures, fake Windows seams, and a headless GUI suite
+with rendered audit screenshots) is green. **The five-phase
+roadmap is complete at v1.0.0**; Windows on-hardware verification
+comes next.
 
 ## License
 
