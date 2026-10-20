@@ -2,7 +2,7 @@
 
 **Sentinel Safeguard LLC — the Windows driver updater that pays the toll first.**
 
-[![Version](https://img.shields.io/badge/version-v1.0.2-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.2)
+[![Version](https://img.shields.io/badge/version-v1.0.3-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.3)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white)](https://github.com/TheRealJesusTheHacker/Charon.exe)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![UI](https://img.shields.io/badge/UI-PySide6-41cd52?style=flat-square)](https://doc.qt.io/qtforpython-6/)
@@ -166,14 +166,16 @@ The workflow is fixed in the code, not suggested by it:
   found, downloading, toll paid, toll refused (with the
   plain-language way forward), crossing, a driver held back, a
   restart needed (reported, never forced), and done.
-- Sentinel green-and-black throughout: no light backgrounds, every
-  text pairing pinned at ≥ 4.5:1 contrast by test, and no purple
+- Charon's own colors throughout — the Styx palette: a
+  charcoal-slate night, the river's aqua-teal, and the muted
+  gold of the obol coin. No light backgrounds, every text
+  pairing pinned at ≥ 4.5:1 contrast by test, and no purple
   anywhere in the palette — also pinned by test.
 
 ## Installation
 
 **The portable edition has shipped — in
-[v1.0.2](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.2).**
+[v1.0.3](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.3).**
 Download `CharonPortable.zip` from that release (its
 `SHA256SUMS.txt` is attached alongside it), unzip it anywhere —
 a folder on the PC or the Sentinel IT Toolkit USB — open the
@@ -259,7 +261,7 @@ python -m charon download          # stage outdated drivers (installs nothing)
 python -m charon toll              # pay the toll: create + verify a restore point
 python -m charon apply             # the crossing: install the staged drivers
 python -m charon gui               # the window: the whole crossing, guided
-python -m charon --version         # 1.0.2
+python -m charon --version         # 1.0.3
 ```
 
 | Command | Options | Notes |
@@ -312,7 +314,7 @@ and proves the confinement holds.
 | `charon/download.py` | Pure logic: the download plan, fresh-search revalidation, progress events, and the ledger |
 | `charon/apply.py` | Pure logic: the crossing — ledger staged set, admin check, fresh revalidation, the fresh gate, one-at-a-time installs, device checks, apply records |
 | `charon/model.py` / `charon/cli.py` | The report model and the command line (table or JSON), with designed plain-language failure states |
-| `charon/gui.py` / `charon/hud.py` / `charon/theme.py` | The window, the animated HUD widgets (scan sweep, journey, toll ticket, driver rows), and the Sentinel palette/stylesheet — the window owns no capability of its own |
+| `charon/gui.py` / `charon/hud.py` / `charon/theme.py` | The window, the animated HUD widgets (scan sweep, journey, toll ticket, driver rows), and Charon's Styx palette/stylesheet — the window owns no capability of its own |
 
 ### The ledger
 
@@ -397,14 +399,14 @@ python -m pytest            # the full suite
 python -m pytest --collect-only -q
 ```
 
-The suite stands at **217 tests, verified by collection**, and runs
+The suite stands at **231 tests, verified by collection**, and runs
 green on Linux — because it is built to: recorded fixtures
 (`tests/fixtures/` — CIM driver JSON, `pnputil` output, Windows
 Update offers) and fake/recorded seams stand in for Windows, and the
 GUI tests run headlessly under PySide6's offscreen platform (the GUI
 test module skips itself where PySide6 isn't installed, so the
 engine suite stays green on a Qt-less machine —
-`pytest --collect-only` reports 194 in that case). Coverage spans
+`pytest --collect-only` reports 200 in that case). Coverage spans
 the inventory and matching logic, download staging and the ledger,
 the toll and its skip trap, the apply engine and the stop-the-line
 rule, the CLI, the safety invariants, and the window end to end —
@@ -454,6 +456,17 @@ pin them against the live API on the runner. The same hunt fixed the window clos
 (it now refuses, in plain language, until the step finishes) and
 made the ledger lock's unlocked fallbacks log a warning instead
 of proceeding in silence. See [CHANGELOG.md](CHANGELOG.md).
+
+**v1.0.3 — Charon's own colors (2026-10-20).** The window now
+wears the Styx palette — charcoal-slate, river aqua, obol gold —
+with danger in the kit's shared treatment (white on the danger
+red). The change is colors only: the palette constants, the
+styles they feed, and the tests that pin them. Every engine file
+is exactly v1.0.2's, the full screenshot audit was re-rendered
+and re-checked in the new palette, and every text pairing stays
+pinned at 4.5:1 or better. How the new face reads on a real
+display joins the on-hardware list below — the offscreen renders
+are evidence, not a substitute.
 
 **Pending, stated plainly: Windows on-hardware verification.**
 Every phase's engine is proven against recorded fixtures and mocked

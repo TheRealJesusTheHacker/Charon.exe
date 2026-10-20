@@ -1,5 +1,36 @@
 # Changelog — CHARON.EXE
 
+## v1.0.3 — 2026-10-20
+
+Charon gets its own face. Every tool in the medic kit now wears
+the colors of what it was named for; Charon's are the Styx — a
+charcoal-slate night, the river's aqua-teal for everything that
+moves or can be pressed, and the muted gold of the obol, the
+coin paid for passage, for the moments that carry a warning.
+
+- **Colors only.** The change surface is the palette: the
+  constants in `charon/theme.py`, the styles they feed in
+  `hud.py` and `gui.py`, and the tests that pin them. No engine
+  file changed — the hunt's Windows Update seams, the ledger
+  lock stack, the close-while-busy refusal, and the toll gate
+  are exactly what v1.0.2 shipped, and no behavior, layout, or
+  wording changed anywhere.
+- **Every pairing pinned, the identity pinned.** The theme
+  tests hold each rendered text pairing at WCAG 4.5:1 or better
+  (the worst is retired-control text on a panel, 5.88:1) and
+  now pin the palette's exact values, so the identity cannot
+  drift — or be "helpfully" recolored — unnoticed. The
+  no-purple pin still holds.
+- **Danger reads as danger.** The toll-refusal banner and the
+  held-back driver chip are now white text on the kit's shared
+  danger red itself, instead of red text on a dark panel — the
+  one treatment the whole kit uses, impossible to miss.
+- **The screenshot audit was re-run end to end** — all seven
+  main states re-rendered in the new palette and checked:
+  primary actions in river aqua with dark text, the TOLL PAID
+  stamp struck in aqua, the refusal banner in full danger red,
+  no light backgrounds, no painted purple.
+
 ## v1.0.2 — 2026-10-20
 
 Kit-hunt patch: a fleet-wide hunt for defects that only a real
