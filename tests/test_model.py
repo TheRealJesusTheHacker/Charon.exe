@@ -119,3 +119,53 @@ def test_report_to_dict_is_json_serializable():
     assert data["devices"][1]["update"] is None
     assert "Z" in data["generated_at"] or "+00:00" in data["generated_at"]
     assert json.loads(text) == data
+
+
+
+# ----------------------------------------------------------------------
+# Bug hunt #2 regressions: a hand-trimmed report must degrade, not die
+# ----------------------------------------------------------------------
+
+
+def test_from_dict_tolerates_wrong_field_types():
+    report = ScanReport.from_dict(
+        {
+            "devices": 5,
+            "sources": 7,
+            "warnings": "oops",
+        }
+    )
+    assert report.devices == []
+    assert report.sources == []
+    assert report.warnings == []
+
+    report = ScanReport.from_dict(
+        {
+            "devices": [
+                {
+                    "driver": "not-a-dict",
+                    "status": "update_available",
+                    "update": "also-not-a-dict",
+                    "notes": 42,
+                },
+                {
+                    "driver": {
+                        "device_name": "Widget",
+                        "hardware_ids": 5,
+                        "notes": None,
+                    }
+                },
+            ]
+        }
+    )
+    assert report.devices[0].driver.device_name == "Unknown device"
+    assert report.devices[0].update is None
+    assert report.devices[1].driver.device_name == "Widget"
+    assert report.devices[1].driver.hardware_ids == ()
+
+
+def test_parse_version_absurd_component_is_unknown_not_a_crash():
+    # int() refuses digit strings past a few thousand characters;
+    # a crafted version must read as unparseable, never raise.
+    assert parse_version("9" * 5000) is None
+    assert compare_versions("9" * 5000, "1.0") is None
