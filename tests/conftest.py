@@ -205,7 +205,17 @@ class FakeComSession:
         self.installer_constructed = 0
         self.install_calls: list[list] = []
 
-    def CreateUpdateCollection(self):
+    def make_collection(self):
+        """The collection factory the seams are given in tests.
+
+        NOT a session member: the real IUpdateSession has no
+        CreateUpdateCollection method — a collection is its own
+        coclass (Microsoft.Update.UpdateColl), created separately.
+        The kit hunt of 2026-10-20 found the fake previously
+        offered exactly that nonexistent session method, mirroring
+        the seams' mistaken shape. Any access to it now detonates
+        through __getattr__ below, as an unexpected member should.
+        """
         return _FakeCollection()
 
     def CreateUpdateDownloader(self):

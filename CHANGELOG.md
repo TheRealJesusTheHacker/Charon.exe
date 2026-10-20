@@ -28,6 +28,18 @@ physical test of the portable edition.
   downloader shape exactly (no `GetUpdateResult` on the
   downloader, a no-argument `Download()` returning the result).
   Both failed before the fix — locally and on the Windows runner.
+- **Update collections are now built the way Windows builds
+  them (critical).** Both batch seams asked the session for a
+  collection (`session.CreateUpdateCollection()`), but
+  `IUpdateSession` has no such method — a collection is its own
+  coclass, `Microsoft.Update.UpdateColl`. On a real PC that call
+  fails, so the download and install steps would each have
+  refused at setup, before moving a single byte. Both seams now
+  build the collection through that coclass (injectable in
+  tests, like the session). The shared fake no longer offers the
+  phantom session method, a safety invariant now bans it from
+  the package outright, and a Windows-only probe test pins both
+  halves of the real shape against the live API.
 - **The window refuses to close mid-step.** Closing the window
   while an engine worker thread was running was accepted, and
   destroying a running worker thread makes Qt abort the whole

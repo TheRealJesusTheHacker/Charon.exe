@@ -438,14 +438,19 @@ release workflow are all committed under `packaging/` and
 
 **v1.0.2 — the kit hunt (2026-10-20).** A fleet-wide hunt for
 defects only a real Windows machine could expose found one in
-Charon's download seam: it read each download's verdict from the
-downloader object, but Windows Update keeps those verdicts on the
-result object its synchronous `Download()` returns — so on a real
-PC every staged download would have been reported "not
-downloaded", however the fetch itself went. The test fake had
-been built to the same mistaken shape, which is why the suite was
-green; the fake now models the documented API and regression
-tests pin it. The same hunt fixed the window closing mid-step
+Charon's Windows Update seams, in two places. The download seam
+read each download's verdict from the downloader object, but
+Windows Update keeps those verdicts on the result object its
+synchronous `Download()` returns — so on a real PC every staged
+download would have been reported "not downloaded", however the
+fetch itself went. And both the download and install seams asked
+the update session to build their update collection, a method
+the session does not have — collections are their own coclass —
+so both steps would have refused at setup on a real PC. The test
+fakes had been built to the same mistaken shapes, which is why
+the suite was green; the fakes now model the documented API,
+regression tests pin both shapes, and Windows-only probe tests
+pin them against the live API on the runner. The same hunt fixed the window closing mid-step
 (it now refuses, in plain language, until the step finishes) and
 made the ledger lock's unlocked fallbacks log a warning instead
 of proceeding in silence. See [CHANGELOG.md](CHANGELOG.md).

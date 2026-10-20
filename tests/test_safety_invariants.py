@@ -155,11 +155,21 @@ def test_confined_capability_lives_only_in_its_seam(token, home):
 def test_update_collection_confined_to_the_two_wua_batch_seams():
     # An update collection is a neutral container — the one WUA
     # shape both the fetch seam and the apply seam must build.
-    # It may exist in exactly those two modules and nowhere else.
+    # It is its own coclass (Microsoft.Update.UpdateColl), NOT a
+    # session member: IUpdateSession has no CreateUpdateCollection
+    # method, and the 2026-10-20 kit hunt found both seams asking
+    # the session for one — a call that fails on every real PC.
+    # The coclass ProgID may exist in exactly the two seam modules
+    # and nowhere else, and the phantom session method may exist
+    # nowhere at all.
     for name, text in _sources().items():
+        assert "CreateUpdateCollection" not in text, (
+            f"phantom session method used in charon/{name} — "
+            "IUpdateSession has no such member"
+        )
         if name in ("wua_download.py", "wua_install.py"):
             continue
-        assert "CreateUpdateCollection" not in text, (
+        assert "Microsoft.Update.UpdateColl" not in text, (
             f"update collection built in charon/{name}"
         )
 
@@ -323,7 +333,7 @@ def test_behavioral_download_run_issues_exactly_the_pinned_sequence(
         cli,
         "download_updates",
         lambda objects, downloader=None, emit=None: download_updates(
-            objects, downloader=ComUpdateDownloader(session), emit=emit
+            objects, downloader=ComUpdateDownloader(session, collection_factory=session.make_collection), emit=emit
         ),
     )
 
@@ -431,7 +441,7 @@ def test_behavioral_apply_run_crosses_only_behind_the_fresh_gate(
     results, toll_record, _path = cli.run_apply(
         toll_backend=backend,
         searcher=searcher,
-        installer=ComUpdateInstaller(session),
+        installer=ComUpdateInstaller(session, collection_factory=session.make_collection),
         verify=lambda entries, cand: (True, ""),
         ledger_path=fresh_ledger("ledger.json"),
     )
@@ -453,7 +463,7 @@ def test_behavioral_apply_run_crosses_only_behind_the_fresh_gate(
         cli.run_apply(
             toll_backend=GateBackend([]),
             searcher=searcher,
-            installer=ComUpdateInstaller(session2),
+            installer=ComUpdateInstaller(session2, collection_factory=session2.make_collection),
             verify=lambda entries, cand: (True, ""),
             ledger_path=fresh_ledger("ledger2.json"),
         )

@@ -118,7 +118,7 @@ def _stage(resolved, session, events):
 
     def fetch(objects, emit=None):
         return download_updates(
-            objects, downloader=ComUpdateDownloader(session), emit=emit
+            objects, downloader=ComUpdateDownloader(session, collection_factory=session.make_collection), emit=emit
         )
 
     return stage_plan(resolved, fetch, emit=events.append)
@@ -476,7 +476,7 @@ def _wire_download(monkeypatch, runner, searcher, session):
         cli,
         "download_updates",
         lambda objects, downloader=None, emit=None: download_updates(
-            objects, downloader=ComUpdateDownloader(session), emit=emit
+            objects, downloader=ComUpdateDownloader(session, collection_factory=session.make_collection), emit=emit
         ),
     )
 
@@ -568,7 +568,7 @@ def test_cli_download_from_report(
         cli,
         "download_updates",
         lambda objects, downloader=None, emit=None: download_updates(
-            objects, downloader=ComUpdateDownloader(session), emit=emit
+            objects, downloader=ComUpdateDownloader(session, collection_factory=session.make_collection), emit=emit
         ),
     )
 
@@ -656,12 +656,13 @@ def test_downloader_setup_failure_is_designed_not_raw():
     guard, so a COM failure there escaped as a raw exception (a
     traceback in the CLI) instead of WuaDownloadUnavailable."""
 
-    class ExplodingSession:
-        def CreateUpdateCollection(self):
-            raise RuntimeError("COM collection exploded")
+    def exploding_factory():
+        raise RuntimeError("COM collection exploded")
 
     with pytest.raises(WuaDownloadUnavailable):
-        ComUpdateDownloader(ExplodingSession()).download([_wifi_com()])
+        ComUpdateDownloader(
+            FakeComSession(), collection_factory=exploding_factory
+        ).download([_wifi_com()])
 
 
 def test_unreadable_verdict_fails_only_that_update():
@@ -740,15 +741,19 @@ def test_empty_batch_builds_no_downloader():
 def test_absurd_download_sizes_never_crash_and_never_stick():
     for bad_size in (float("nan"), float("inf"), -5):
         com = _wifi_com(max_download_size=bad_size)
-        results = ComUpdateDownloader(FakeComSession()).download([com])
+        session = FakeComSession()
+        results = ComUpdateDownloader(
+            session, collection_factory=session.make_collection
+        ).download([com])
         assert results[0].status == "succeeded"
         assert results[0].size_bytes is None
 
 
 def test_none_update_fails_alone():
-    results = ComUpdateDownloader(FakeComSession()).download(
-        [None, _touch_com()]
-    )
+    session = FakeComSession()
+    results = ComUpdateDownloader(
+        session, collection_factory=session.make_collection
+    ).download([None, _touch_com()])
     assert results[0].status == "failed"
     assert results[1].status == "succeeded"
 
@@ -837,15 +842,21 @@ class _RealDownloader:
         raise AttributeError(name)
 
 
+def _real_collection():
+    from conftest import _FakeCollection
+
+    return _FakeCollection()
+
+
 class _RealSession:
+    """IUpdateSession as documented: searcher/downloader/installer
+    factories only. There is deliberately NO collection member —
+    a collection is its own coclass, handed to the seam through
+    its collection_factory. Any other member request detonates."""
+
     def __init__(self, codes):
         self._codes = list(codes)
         self.downloader = None
-
-    def CreateUpdateCollection(self):
-        from conftest import _FakeCollection
-
-        return _FakeCollection()
 
     def CreateUpdateDownloader(self):
         self.downloader = _RealDownloader(self._codes)
@@ -858,9 +869,9 @@ class _RealSession:
 def test_download_verdicts_come_from_the_download_result_object():
     """A successful real-shaped download must be reported staged."""
     session = _RealSession([2, 2])
-    results = ComUpdateDownloader(session).download(
-        [_wifi_com(), _touch_com()], emit=lambda event: None
-    )
+    results = ComUpdateDownloader(
+        session, collection_factory=_real_collection
+    ).download([_wifi_com(), _touch_com()], emit=lambda event: None)
     assert [r.status for r in results] == ["succeeded", "succeeded"]
     assert [r.result_code for r in results] == [2, 2]
     assert session.downloader.download_calls == 1
@@ -868,9 +879,9 @@ def test_download_verdicts_come_from_the_download_result_object():
 
 def test_download_verdicts_real_shape_per_update_failure():
     session = _RealSession([2, 4])
-    results = ComUpdateDownloader(session).download(
-        [_wifi_com(), _touch_com()]
-    )
+    results = ComUpdateDownloader(
+        session, collection_factory=_real_collection
+    ).download([_wifi_com(), _touch_com()])
     by_status = [r.status for r in results]
     assert by_status == ["succeeded", "failed"]
 

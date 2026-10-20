@@ -32,7 +32,7 @@ def _update(title="Driver A", **kwargs):
 
 def test_install_one_success_marks_update_installed():
     session = FakeComSession()
-    installer = ComUpdateInstaller(session)
+    installer = ComUpdateInstaller(session, collection_factory=session.make_collection)
     update = _update()
     outcome = installer.install_one(update)
 
@@ -58,14 +58,14 @@ def test_install_one_success_marks_update_installed():
 )
 def test_install_verdict_mapping(code, status):
     session = FakeComSession(install_codes_by_title={"Driver A": code})
-    outcome = ComUpdateInstaller(session).install_one(_update())
+    outcome = ComUpdateInstaller(session, collection_factory=session.make_collection).install_one(_update())
     assert outcome.status == status
     assert outcome.result_code == code
 
 
 def test_reboot_required_is_reported_not_acted_on():
     session = FakeComSession(reboot_titles={"Driver A"})
-    outcome = ComUpdateInstaller(session).install_one(_update())
+    outcome = ComUpdateInstaller(session, collection_factory=session.make_collection).install_one(_update())
     assert outcome.status == RESULT_SUCCEEDED
     assert outcome.reboot_required is True
     # The seam has no restart member to call — the fake session
@@ -75,7 +75,7 @@ def test_reboot_required_is_reported_not_acted_on():
 def test_success_claimed_but_not_installed_counts_as_failed():
     session = FakeComSession(claims_success_not_installed={"Driver A"})
     update = _update()
-    outcome = ComUpdateInstaller(session).install_one(update)
+    outcome = ComUpdateInstaller(session, collection_factory=session.make_collection).install_one(update)
     assert outcome.status == RESULT_FAILED
     assert "not installed" in outcome.detail
     assert update.IsInstalled is False
@@ -83,7 +83,7 @@ def test_success_claimed_but_not_installed_counts_as_failed():
 
 def test_mid_install_failure_is_the_updates_own_verdict():
     session = FakeComSession(install_raises_titles={"Driver A"})
-    outcome = ComUpdateInstaller(session).install_one(_update())
+    outcome = ComUpdateInstaller(session, collection_factory=session.make_collection).install_one(_update())
     assert outcome.status == RESULT_FAILED
     assert "problem while installing" in outcome.detail
 
@@ -91,14 +91,14 @@ def test_mid_install_failure_is_the_updates_own_verdict():
 def test_machinery_failure_is_a_designed_refusal():
     session = FakeComSession(installer_setup_raises=True)
     with pytest.raises(WuaInstallUnavailable) as excinfo:
-        ComUpdateInstaller(session).install_one(_update())
+        ComUpdateInstaller(session, collection_factory=session.make_collection).install_one(_update())
     assert "couldn't start the install" in excinfo.value.user_message
     assert excinfo.value.detail  # the technical half is logged, not shown raw
 
 
 def test_empty_update_fails_alone_without_machinery():
     session = FakeComSession()
-    outcome = ComUpdateInstaller(session).install_one(None)
+    outcome = ComUpdateInstaller(session, collection_factory=session.make_collection).install_one(None)
     assert outcome.status == RESULT_FAILED
     assert session.installer_constructed == 0
     assert session.install_calls == []
@@ -107,13 +107,13 @@ def test_empty_update_fails_alone_without_machinery():
 def test_install_update_entry_point_uses_injected_installer():
     session = FakeComSession()
     outcome = install_update(
-        _update(), installer=ComUpdateInstaller(session)
+        _update(), installer=ComUpdateInstaller(session, collection_factory=session.make_collection)
     )
     assert outcome.status == RESULT_SUCCEEDED
 
 
 def test_installer_builds_no_downloader():
     session = FakeComSession()
-    ComUpdateInstaller(session).install_one(_update())
+    ComUpdateInstaller(session, collection_factory=session.make_collection).install_one(_update())
     assert session.downloader_constructed == 0
     assert session.download_calls == []

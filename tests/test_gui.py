@@ -614,3 +614,28 @@ def test_engine_worker_can_use_com_on_windows(window, qapp):
         f"engine failed on the worker thread: {outcome.get('error')!r}"
     )
     assert outcome.get("ok") is True
+
+
+@pytest.mark.skipif(
+    not os.sys.platform.startswith("win"),
+    reason="real WUA API shape is Windows-only",
+)
+def test_real_session_shape_and_update_collection_coclass():
+    """Probe/guard, Windows-only: pin the two WUA shapes the kit
+    hunt found the seams getting wrong, against the real API.
+
+    1. IUpdateSession has NO CreateUpdateCollection member — both
+       batch seams asked it for one, which fails on a real PC
+       before any download or install can begin.
+    2. A collection is its own coclass: Dispatch of
+       Microsoft.Update.UpdateColl yields an empty collection —
+       the shape both seams now build through their collection
+       factory.
+    """
+    import win32com.client
+
+    session = win32com.client.Dispatch("Microsoft.Update.Session")
+    with pytest.raises(Exception):
+        session.CreateUpdateCollection()
+    collection = win32com.client.Dispatch("Microsoft.Update.UpdateColl")
+    assert int(collection.Count) == 0

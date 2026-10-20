@@ -144,6 +144,22 @@ def _status_for_code(code: int) -> tuple[str, str]:
     return RESULT_FAILED, f"Windows Update returned an unknown result ({code})."
 
 
+def _dispatch_update_collection():
+    """Create a real, empty WUA update collection.
+
+    A collection is its own coclass — created through the
+    ``Microsoft.Update.UpdateColl`` program identifier. It is NOT
+    a session member: ``IUpdateSession`` has no collection factory
+    (its factories make the searcher, the downloader, and the
+    installer only). The 2026-10-20 kit hunt found both batch
+    seams asking the session for one anyway; on a real PC that
+    call fails and the step refuses before it starts.
+    """
+    import win32com.client
+
+    return win32com.client.Dispatch("Microsoft.Update.UpdateColl")
+
+
 class ComUpdateDownloader:
     """The real Windows downloader, backed by the WUA COM session.
 
@@ -151,12 +167,18 @@ class ComUpdateDownloader:
     object anywhere in this class, by design and by test.
     """
 
-    def __init__(self, session=None):
+    def __init__(self, session=None, collection_factory=None):
         if session is None:
             import win32com.client  # pywin32, Windows-only by design
 
             session = win32com.client.Dispatch("Microsoft.Update.Session")
         self._session = session
+        self._collection_factory = collection_factory
+
+    def _make_collection(self):
+        if self._collection_factory is not None:
+            return self._collection_factory()
+        return _dispatch_update_collection()
 
     def download(
         self,
@@ -261,7 +283,7 @@ class ComUpdateDownloader:
         # itself had gone. The kit-hunt regression tests pin the
         # documented shape.
         try:
-            collection = self._session.CreateUpdateCollection()
+            collection = self._make_collection()
             for i in live_indexes:
                 collection.Add(updates[i])
             downloader = self._session.CreateUpdateDownloader()
