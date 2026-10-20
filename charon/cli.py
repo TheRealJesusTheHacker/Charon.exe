@@ -582,6 +582,29 @@ def _apply_command(args) -> int:
     return EXIT_OK
 
 
+# ----------------------------------------------------------------------
+# Phase 5 — the window
+# ----------------------------------------------------------------------
+
+
+def _gui_command(args) -> int:
+    """Launch the HUD. The import is deliberately lazy: the engine
+    commands must work on a PC (or a test box) with no Qt at all,
+    and a missing GUI library is a designed message, not a crash."""
+    try:
+        from .gui import main as gui_main
+    except ImportError as exc:
+        log.error("GUI unavailable: %s", exc)
+        print(
+            "Charon's window needs the PySide6 interface library, "
+            "which isn't installed on this PC. The commands still "
+            "work: scan, download, toll, and apply run the same "
+            "crossing from here."
+        )
+        return EXIT_DESIGNED_FAILURE
+    return gui_main()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="charon",
@@ -648,6 +671,11 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="ledger location (default: Charon's app-state folder)",
     )
+    sub.add_parser(
+        "gui",
+        help="open Charon's window — the whole crossing as one "
+        "guided journey (scan, download, toll, apply)",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -663,6 +691,8 @@ def main(argv: list[str] | None = None) -> int:
         return _toll_command(args)
     if args.command == "apply":
         return _apply_command(args)
+    if args.command == "gui":
+        return _gui_command(args)
     parser.print_help()
     return EXIT_OK
 
