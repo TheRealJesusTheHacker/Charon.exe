@@ -92,7 +92,10 @@ def normalize_pnputil_entry(raw: dict) -> InstalledDriver:
 
 def normalize_update(raw: dict) -> UpdateCandidate:
     """One Windows Update search result → UpdateCandidate."""
-    date_value = raw.get("driver_date", raw.get("driver_date_text"))
+    # `or`, not .get-with-default: a seam that names the key with a
+    # None value (a COM date that wasn't there) must not shadow the
+    # text form riding alongside it.
+    date_value = raw.get("driver_date") or raw.get("driver_date_text")
     return UpdateCandidate(
         title=_text(raw.get("title")),
         driver_model=_text(raw.get("driver_model")),
