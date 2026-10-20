@@ -79,13 +79,22 @@ class SubprocessRunner:
     """
 
     def run(self, args: list[str]) -> str:
-        proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            args,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(  # noqa: S603 - fixed argv, no shell
+                args,
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            # A missing tool or a hung query is this seam's designed
+            # failure, same as the toll seam's runner converts it —
+            # not a raw exception for callers to trip over.
+            raise InventoryUnavailable(
+                "Windows didn't answer the driver inventory query.",
+                detail=f"{type(exc).__name__}: {exc}",
+            ) from exc
         if proc.returncode != 0:
             raise InventoryUnavailable(
                 "Windows didn't answer the driver inventory query.",
