@@ -228,10 +228,18 @@ complete.** The animated window is built:
 
 ## Portable edition — committed deliverable
 
-**Status: PACKAGING READY (2026-10-20) — the first portable ships
-with the next release.** The portable edition is no longer
-backlog; it is a committed deliverable with its build wired end
-to end:
+**Status: SHIPPED (2026-10-20) — v1.0.1.** The portable edition
+shipped in
+[Charon v1.0.1](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.1),
+Charon's first published release, which carries
+`CharonPortable.zip` and `SHA256SUMS.txt` as its assets. Cutting
+it required fixing the Windows concurrent-ledger-writer lock
+in `charon/download.py::_ledger_lock` (every writer now locks
+byte 0; the failing Windows test
+`test_concurrent_ledger_writers_lose_nothing` passes — 215
+passed, 2 skipped in the release workflow) — see
+`CHANGELOG.md`. The portable edition is no longer backlog; it
+is a shipped deliverable with its build wired end to end:
 
 - `packaging/Charon.spec` — a PyInstaller one-folder build of the
   window (the `charon` package plus its PySide6 and pywin32 COM

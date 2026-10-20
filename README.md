@@ -2,7 +2,7 @@
 
 **Sentinel Safeguard LLC — the Windows driver updater that pays the toll first.**
 
-[![Version](https://img.shields.io/badge/version-v1.0.0-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/blob/main/charon/__init__.py)
+[![Version](https://img.shields.io/badge/version-v1.0.1-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.1)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white)](https://github.com/TheRealJesusTheHacker/Charon.exe)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![UI](https://img.shields.io/badge/UI-PySide6-41cd52?style=flat-square)](https://doc.qt.io/qtforpython-6/)
@@ -172,27 +172,24 @@ The workflow is fixed in the code, not suggested by it:
 
 ## Installation
 
-**The portable edition's packaging is ready — the first portable
-ships with the next release.** There are no GitHub releases yet,
-so today Charon still runs from source (below). The portable
-build itself is wired and committed in this repository, under
-`packaging/`: a PyInstaller one-folder spec, the pinned CI
-dependency list, the portable readme that will ship inside the
-zip, and the release workflow (`.github/workflows/build-release.yml`)
-that — on every published release — runs the full test suite,
-builds the folder, smoke-tests the packaged window, and attaches
-`CharonPortable.zip` and `SHA256SUMS.txt` to the release. When
-the first release is published, the portable story will be:
-download `CharonPortable.zip`, unzip it anywhere — a folder on
-the PC or the Sentinel IT Toolkit USB — open the `Charon`
-folder inside, and double-click `Charon.exe`. No install, and
-no Python on the machine. (A single self-installing
-`Charon.exe` stays on the roadmap's backlog; see
-[Status & roadmap](#status--roadmap).) Anyone who tells you to
-download a prebuilt Charon binary today is not describing this
-repository.
+**The portable edition has shipped — in
+[v1.0.1](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.1).**
+Download `CharonPortable.zip` from that release (its
+`SHA256SUMS.txt` is attached alongside it), unzip it anywhere —
+a folder on the PC or the Sentinel IT Toolkit USB — open the
+`Charon` folder inside, and double-click `Charon.exe`. No
+install, and no Python on the machine. The portable build is
+wired and committed in this repository, under `packaging/`: a
+PyInstaller one-folder spec, the pinned CI dependency list, the
+portable readme that ships inside the zip, and the release
+workflow (`.github/workflows/build-release.yml`) that — on
+every published release — runs the full test suite, builds the
+folder, smoke-tests the packaged window, and attaches
+`CharonPortable.zip` and `SHA256SUMS.txt` to the release.
+(A single self-installing `Charon.exe` stays on the roadmap's
+backlog; see [Status & roadmap](#status--roadmap).)
 
-Running from source — the way to run Charon today. What you need:
+Running from source — the other way to run Charon. What you need:
 
 - A **Windows PC** to do real driver work. (Charon's logic and its
   test suite run anywhere; the inventory, Windows Update, and
@@ -262,7 +259,7 @@ python -m charon download          # stage outdated drivers (installs nothing)
 python -m charon toll              # pay the toll: create + verify a restore point
 python -m charon apply             # the crossing: install the staged drivers
 python -m charon gui               # the window: the whole crossing, guided
-python -m charon --version         # 1.0.0
+python -m charon --version         # 1.0.1
 ```
 
 | Command | Options | Notes |
@@ -425,15 +422,19 @@ roadmap on 2026-10-20. The full phase-by-phase record — including
 what each phase's audit pinned — lives in
 [docs/ROADMAP.md](docs/ROADMAP.md).
 
-**Portable packaging — ready, first portable ships with the next
-release.** The portable edition is no longer backlog: the
-PyInstaller one-folder spec, the pinned CI dependency list, the
-portable readme, and the release workflow that builds
-`CharonPortable.zip` and its `SHA256SUMS.txt` are all committed
-under `packaging/` and `.github/workflows/` (see
-[docs/ROADMAP.md](docs/ROADMAP.md)). No release has been cut with
-them yet, so the run-from-source install above is still the way
-to run Charon today.
+**v1.0.1 — the portable edition has SHIPPED (2026-10-20).**
+[Charon v1.0.1](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.1)
+is Charon's first published release, and it carries
+`CharonPortable.zip` and its `SHA256SUMS.txt`, built and
+attached by the release workflow after the full suite passed
+on Windows. v1.0.1 also fixes the Windows concurrent-ledger-
+writer lock (every writer now locks byte 0 of the ledger lock
+file; concurrent download/toll appends no longer lose a record
+on Windows) — see [CHANGELOG.md](CHANGELOG.md). The portable
+edition is no longer backlog: the PyInstaller one-folder spec,
+the pinned CI dependency list, the portable readme, and the
+release workflow are all committed under `packaging/` and
+`.github/workflows/` (see [docs/ROADMAP.md](docs/ROADMAP.md)).
 
 **Pending, stated plainly: Windows on-hardware verification.**
 Every phase's engine is proven against recorded fixtures and mocked
