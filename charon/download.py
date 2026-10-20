@@ -499,20 +499,34 @@ def _result_row(result: StagedResult, moment: datetime) -> dict:
 
 _ledger_lock_guard = threading.Lock()
 _ledger_lock_holds: dict[tuple[str, int], int] = {}
+_ledger_path_locks: dict[str, threading.Lock] = {}
 
 
 @contextlib.contextmanager
 def _ledger_lock(path: Path):
     """Hold the ledger's write lock for one load-modify-write cycle.
 
-    Re-entrant for the holding thread; distinct threads and
-    processes contend on the OS lock itself.
+    Re-entrant for the holding thread. Distinct threads of this
+    process queue on a per-path process lock first (see
+    ``_ledger_path_locks``); the OS byte/flock lock then only has
+    to arbitrate between processes. The split matters on Windows:
+    byte-range locks arbitrate between processes soundly, but a
+    thread that reaches the seed/lock steps while a sibling holds
+    byte 0 can be refused in ways that drop it into the unlocked
+    fallback — the v1.0.2 release gate caught exactly that (19 of
+    20 concurrent appends landed; the log showed the refused
+    writer proceeding unlocked).
     """
     path = Path(path)
     key = (str(path), threading.get_ident())
     with _ledger_lock_guard:
         held = _ledger_lock_holds.get(key, 0)
         _ledger_lock_holds[key] = held + 1
+        path_lock = _ledger_path_locks.setdefault(
+            str(path), threading.Lock()
+        )
+    if not held:
+        path_lock.acquire()
     fd = None
     locked = False
     try:
@@ -541,8 +555,25 @@ def _ledger_lock(path: Path):
                     if sys.platform.startswith("win"):
                         import msvcrt
 
-                        if os.fstat(fd).st_size == 0:
-                            os.write(fd, b"\0")
+                        # The seed write itself can be refused: a
+                        # writer that finds the file empty writes
+                        # the seed at offset 0 — the very byte a
+                        # sibling process may already hold locked,
+                        # and Windows refuses a write into a locked
+                        # region from another handle. Retry until
+                        # the sibling's seed is visible (or the
+                        # budget ends and the outer handler logs
+                        # the unlocked fallback) — never let a
+                        # refused seed drop this writer unlocked.
+                        for _seed_attempt in range(200):
+                            try:
+                                if os.fstat(fd).st_size == 0:
+                                    os.write(fd, b"\0")
+                                break
+                            except OSError:
+                                if _seed_attempt == 199:
+                                    raise
+                                time.sleep(0.05)
                         # msvcrt.locking locks from the fd's current
                         # offset, not from 0: the seed write above
                         # leaves a fresh fd at offset 1 while every
@@ -597,6 +628,8 @@ def _ledger_lock(path: Path):
             except OSError:
                 pass
             os.close(fd)
+        if not held:
+            path_lock.release()
         with _ledger_lock_guard:
             depth = _ledger_lock_holds.get(key, 1) - 1
             if depth > 0:

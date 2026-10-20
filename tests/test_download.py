@@ -919,3 +919,103 @@ def test_ledger_lock_contention_exhaustion_is_not_silent(
     assert any(
         "unlocked" in record.getMessage() for record in caplog.records
     ), "lock contention exhaustion proceeded unlocked in silence"
+
+
+def _win32_simulation(monkeypatch, locking):
+    """Make download._ledger_lock take its Windows branch on any OS:
+    a fake msvcrt with the given locking behaviour, platform patched."""
+    import sys
+    import types
+
+    from charon import download as download_mod
+
+    fake_msvcrt = types.SimpleNamespace(
+        LK_NBLCK=1, LK_UNLCK=2, locking=locking
+    )
+    monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(download_mod.time, "sleep", lambda seconds: None)
+    return download_mod
+
+
+def test_ledger_lock_serializes_threads_in_process(tmp_path, monkeypatch):
+    """The v1.0.2 release gate caught the v1.0.1 lock race still
+    alive on Windows (19 of 20 appends): threads from THIS process
+    must queue on a process-level lock before they ever reach the
+    OS byte lock — byte locks arbitrate between processes, and a
+    thread that wanders into the seed/lock steps while a sibling
+    holds byte 0 can be refused in ways that drop it into the
+    unlocked fallback. Two threads, a barrier inside the fake
+    locking call: if both threads can be inside the OS-lock step
+    at once, the barrier trips and this test fails."""
+    import threading
+
+    barrier = threading.Barrier(2)
+    overlapped = []
+
+    def locking(fd, mode, nbytes):
+        if mode == 1:  # LK_NBLCK — a lock attempt
+            try:
+                barrier.wait(timeout=3)
+                overlapped.append(True)
+            except threading.BrokenBarrierError:
+                pass
+        return None
+
+    download_mod = _win32_simulation(monkeypatch, locking)
+    path = tmp_path / "ledger.json"
+
+    def hold():
+        with download_mod._ledger_lock(path):
+            pass
+
+    threads = [threading.Thread(target=hold) for _ in range(2)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=15)
+    assert not overlapped, (
+        "two threads were inside the OS-lock step at once — "
+        "in-process writers are not serialized"
+    )
+
+
+def test_ledger_seed_write_retries_instead_of_falling_unlocked(
+    tmp_path, monkeypatch, caplog
+):
+    """The seed-byte write itself can be refused on Windows: a
+    writer that finds the lock file empty writes the seed at
+    offset 0 — exactly the byte a sibling may already hold locked,
+    and Windows refuses a write into a locked region from another
+    handle. That refusal used to land in the 'proceed unlocked'
+    fallback. The seed step must retry until the sibling's seed
+    is visible, never fall unlocked. Simulated: the first
+    os.write raises, later writes succeed."""
+    import logging
+    import os as real_os
+
+    lock_calls = []
+
+    def locking(fd, mode, nbytes):
+        lock_calls.append(mode)
+        return None
+
+    download_mod = _win32_simulation(monkeypatch, locking)
+    real_write = real_os.write
+    attempts = {"n": 0}
+
+    def flaky_write(fd, data):
+        attempts["n"] += 1
+        if attempts["n"] == 1:
+            raise OSError("region is locked by another handle")
+        return real_write(fd, data)
+
+    monkeypatch.setattr(real_os, "write", flaky_write)
+    path = tmp_path / "ledger.json"
+    with caplog.at_level(logging.WARNING, logger="charon.download"):
+        with download_mod._ledger_lock(path):
+            pass
+    assert lock_calls, "the OS lock was never taken"
+    assert not any(
+        "unlocked" in record.getMessage() for record in caplog.records
+    ), "a refused seed write dropped the writer into the unlocked fallback"

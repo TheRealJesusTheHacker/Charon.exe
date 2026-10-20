@@ -40,6 +40,23 @@ physical test of the portable edition.
   phantom session method, a safety invariant now bans it from
   the package outright, and a Windows-only probe test pins both
   halves of the real shape against the live API.
+- **The ledger lock race is closed for real this time.** The
+  first v1.0.2 release run's Windows gate caught the v1.0.1
+  concurrent-writer race still alive — 19 of 20 appends landed,
+  and the captured log showed why: a writer that finds the lock
+  file empty writes the seed byte at offset 0, the very byte a
+  sibling may already hold locked, and Windows refuses a write
+  into a locked region from another handle. That refusal landed
+  in the designed proceed-unlocked fallback, and the unlocked
+  writer raced. Two changes close it in
+  `charon/download.py::_ledger_lock`: threads of the same
+  process now queue on a per-path process lock before touching
+  the OS lock (byte locks arbitrate between processes), and the
+  seed write retries until the sibling's seed is visible instead
+  of falling through. Two deterministic regression tests pin
+  both halves (both failed before the fix), the concurrent
+  writers test was joined by a 200-append stress variant, and
+  the failed first cut of this release was deleted and re-cut.
 - **The window refuses to close mid-step.** Closing the window
   while an engine worker thread was running was accepted, and
   destroying a running worker thread makes Qt abort the whole
