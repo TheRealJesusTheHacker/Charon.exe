@@ -644,3 +644,133 @@ def test_cli_download_nothing_available_is_clean_exit(
     assert code == 0
     out = capsys.readouterr().out
     assert "Nothing to download" in out
+
+
+# ----------------------------------------------------------------------
+# Bug hunt #2 regressions: the seam fails in designed shapes only
+# ----------------------------------------------------------------------
+
+
+def test_downloader_setup_failure_is_designed_not_raw():
+    """Building the collection/downloader used to sit outside every
+    guard, so a COM failure there escaped as a raw exception (a
+    traceback in the CLI) instead of WuaDownloadUnavailable."""
+
+    class ExplodingSession:
+        def CreateUpdateCollection(self):
+            raise RuntimeError("COM collection exploded")
+
+    with pytest.raises(WuaDownloadUnavailable):
+        ComUpdateDownloader(ExplodingSession()).download([_wifi_com()])
+
+
+def test_unreadable_verdict_fails_only_that_update():
+    """One update whose GetUpdateResult raises used to sink the
+    whole batch with a raw exception."""
+    session = FakeComSession()
+    real_create = session.CreateUpdateDownloader
+
+    def create():
+        downloader = real_create()
+        real_result = downloader.GetUpdateResult
+
+        def wrapped(index):
+            updates = list(downloader.Updates.items)
+            if updates[index].Title == TOUCH.title:
+                raise RuntimeError("verdict exploded")
+            return real_result(index)
+
+        downloader.GetUpdateResult = wrapped
+        return downloader
+
+    session.CreateUpdateDownloader = create
+    report = _report(
+        _device("Wi-Fi", "dev-wifi", WIFI),
+        _device("TouchPad", "dev-touch", TOUCH),
+    )
+    plan = build_download_plan(report)
+    resolved = revalidate_plan(plan, [_wifi_com().raw(), _touch_com().raw()])
+    results = _stage(resolved, session, [])
+    by_name = {r.entry.device_name: r for r in results}
+    assert by_name["Wi-Fi"].status == "succeeded"
+    assert by_name["TouchPad"].status == "failed"
+    assert "no verdict" in by_name["TouchPad"].detail
+
+
+def test_eula_failed_update_is_not_sent_to_the_downloader():
+    """An update whose terms couldn't be accepted used to ride the
+    batch anyway. Windows Update is never asked to fetch it."""
+    report = _report(
+        _device("Wi-Fi", "dev-wifi", WIFI),
+        _device("TouchPad", "dev-touch", TOUCH),
+    )
+    plan = build_download_plan(report)
+    resolved = revalidate_plan(
+        plan,
+        [
+            _wifi_com(requires_eula=True, accept_eula_raises=True).raw(),
+            _touch_com().raw(),
+        ],
+    )
+    session = FakeComSession()
+    results = _stage(resolved, session, [])
+    by_name = {r.entry.device_name: r for r in results}
+    assert by_name["Wi-Fi"].status == "failed"
+    assert by_name["TouchPad"].status == "succeeded"
+    sent = [u.Title for call in session.download_calls for u in call]
+    assert sent == [TOUCH.title]
+
+
+def test_empty_batch_builds_no_downloader():
+    session = FakeComSession()
+    assert ComUpdateDownloader(session).download([]) == []
+    assert session.downloader_constructed == 0
+    assert session.download_calls == []
+
+
+def test_absurd_download_sizes_never_crash_and_never_stick():
+    for bad_size in (float("nan"), float("inf"), -5):
+        com = _wifi_com(max_download_size=bad_size)
+        results = ComUpdateDownloader(FakeComSession()).download([com])
+        assert results[0].status == "succeeded"
+        assert results[0].size_bytes is None
+
+
+def test_none_update_fails_alone():
+    results = ComUpdateDownloader(FakeComSession()).download(
+        [None, _touch_com()]
+    )
+    assert results[0].status == "failed"
+    assert results[1].status == "succeeded"
+
+
+def test_stage_unknown_seam_status_counts_as_failed(tmp_path):
+    """A seam status outside the ledger vocabulary used to pass
+    through verbatim: counts stopped summing to the plan, and the
+    summary falsely called the driver 'no longer offered'."""
+    from types import SimpleNamespace
+
+    report = _report(_device("Wi-Fi", "dev-wifi", WIFI))
+    plan = build_download_plan(report)
+    resolved = revalidate_plan(plan, [_wifi_com().raw()])
+
+    def weird_fetch(objects, emit=None):
+        return [
+            SimpleNamespace(
+                status="melted",
+                detail="",
+                eula_accepted=False,
+                size_bytes=None,
+                result_code=None,
+                hresult=None,
+            )
+        ]
+
+    results = stage_plan(resolved, weird_fetch)
+    assert results[0].status == "failed"
+    assert "unrecognized result" in results[0].detail
+    summary = summarize_results(results)
+    assert "the Wi-Fi driver failed" in summary
+    run = append_run_to_ledger(tmp_path / "ledger.json", results)
+    assert run["counts"]["planned"] == 1
+    assert run["counts"]["failed"] == 1
