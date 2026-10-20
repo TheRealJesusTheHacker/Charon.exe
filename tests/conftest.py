@@ -125,6 +125,7 @@ class FakeComUpdate:
         accept_eula_raises=False,
         max_download_size=None,
         is_downloaded=True,
+        is_installed=False,
     ):
         self.Title = title
         self.DriverModel = driver_model
@@ -139,6 +140,7 @@ class FakeComUpdate:
         self.eula_accepted = False
         self.MaxDownloadSize = max_download_size
         self.IsDownloaded = is_downloaded
+        self.IsInstalled = is_installed
 
     def AcceptEula(self):
         if self._accept_eula_raises:
@@ -168,18 +170,40 @@ class FakeDownloadEntry:
 
 
 class FakeComSession:
-    """A stand-in Microsoft.Update.Session for the download seam.
+    """A stand-in Microsoft.Update.Session for the WUA seams.
 
-    Serves exactly the downloader machinery and records the calls.
-    Any other attribute access is a loud failure — a test double must
-    never quietly bless an unexpected capability (no installer, ever).
+    Serves exactly the downloader machinery (Phase 2) and the
+    installer machinery (Phase 4) and records the calls. Any other
+    attribute access is a loud failure — a test double must never
+    quietly bless an unexpected capability.
     """
 
-    def __init__(self, codes_by_title=None, default_code=2):
+    def __init__(
+        self,
+        codes_by_title=None,
+        default_code=2,
+        install_codes_by_title=None,
+        default_install_code=2,
+        reboot_titles=(),
+        install_raises_titles=(),
+        installer_setup_raises=False,
+        claims_success_not_installed=(),
+    ):
         self.codes_by_title = dict(codes_by_title or {})
         self.default_code = default_code
         self.downloader_constructed = 0
         self.download_calls: list[list] = []
+        # Phase 4: the install side of the house.
+        self.install_codes_by_title = dict(install_codes_by_title or {})
+        self.default_install_code = default_install_code
+        self.reboot_titles = set(reboot_titles)
+        self.install_raises_titles = set(install_raises_titles)
+        self.installer_setup_raises = installer_setup_raises
+        self.claims_success_not_installed = set(
+            claims_success_not_installed
+        )
+        self.installer_constructed = 0
+        self.install_calls: list[list] = []
 
     def CreateUpdateCollection(self):
         return _FakeCollection()
@@ -187,6 +211,12 @@ class FakeComSession:
     def CreateUpdateDownloader(self):
         self.downloader_constructed += 1
         return _FakeComDownloader(self)
+
+    def CreateUpdateInstaller(self):
+        if self.installer_setup_raises:
+            raise RuntimeError("fake installer construction failure")
+        self.installer_constructed += 1
+        return _FakeComInstaller(self)
 
     def __getattr__(self, name):
         raise AssertionError(f"unexpected session member requested: {name}")
@@ -228,3 +258,54 @@ class _FakeComDownloader:
 
     def __getattr__(self, name):
         raise AssertionError(f"unexpected downloader member requested: {name}")
+
+
+class _FakeInstallResult:
+    """One fake IInstallationResult for a single-update install."""
+
+    def __init__(self, session, update):
+        self._session = session
+        self._update = update
+        title = update.Title if update is not None else ""
+        self._code = session.install_codes_by_title.get(
+            title, session.default_install_code
+        )
+        self.ResultCode = self._code
+        self.RebootRequired = title in session.reboot_titles
+        self.HResult = 0 if self._code in (2, 3) else -2145124300
+
+    def GetUpdateResult(self, index):
+        assert index == 0, "one update per install — no other index exists"
+        return FakeDownloadEntry(self._code, self.HResult)
+
+
+class _FakeComInstaller:
+    """The installer half of FakeComSession (records; serves codes).
+
+    Installs exactly what its ``Updates`` collection holds — the
+    seam under test is expected to hand it one update at a time,
+    and the recorded calls let tests prove it.
+    """
+
+    def __init__(self, session):
+        self._session = session
+        self.Updates = None
+
+    def Install(self):
+        updates = list(self.Updates.items) if self.Updates else []
+        self._session.install_calls.append(updates)
+        update = updates[0] if updates else None
+        title = update.Title if update is not None else ""
+        if title in self._session.install_raises_titles:
+            raise RuntimeError("fake mid-install COM failure")
+        result = _FakeInstallResult(self._session, update)
+        if (
+            update is not None
+            and result.ResultCode in (2, 3)
+            and title not in self._session.claims_success_not_installed
+        ):
+            update.IsInstalled = True
+        return result
+
+    def __getattr__(self, name):
+        raise AssertionError(f"unexpected installer member requested: {name}")
