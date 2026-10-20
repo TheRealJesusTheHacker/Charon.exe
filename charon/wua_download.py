@@ -26,6 +26,7 @@ omission; Charon doesn't tell those.
 from __future__ import annotations
 
 import logging
+import math
 import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
@@ -110,6 +111,22 @@ def _com_field(obj, name: str, default=None):
     return default if value is None else value
 
 
+def _size_bytes(value) -> int | None:
+    """WUA's reported download size, sanitized for the ledger.
+
+    Only a finite, non-negative number means anything; NaN would
+    raise in ``int()``, infinity likewise, and a negative size is
+    nonsense — all three come back ``None`` ("WUA didn't say")
+    instead of crashing the batch or poisoning the record.
+    """
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    size = int(value)
+    return size if size >= 0 else None
+
+
 def _status_for_code(code: int) -> tuple[str, str]:
     """Map a WUA result code to Charon's status + plain-language note."""
     if code == ORC_SUCCEEDED:
@@ -151,11 +168,16 @@ class _ComProgressSink:
                 percent = _com_field(entry, "PercentComplete", None)
                 if percent is None:
                     continue
+                if isinstance(percent, float) and not math.isfinite(percent):
+                    continue
                 self._emit(
                     ProgressEvent(
                         kind=EVENT_UPDATE_PROGRESS,
                         title=self._titles[index],
-                        percent=int(percent),
+                        # A percentage means 0–100; anything outside
+                        # that is WUA noise, clamped before a screen
+                        # ever renders it.
+                        percent=max(0, min(100, int(percent))),
                     )
                 )
         except Exception:  # a progress hiccup must never sink a download
@@ -181,21 +203,36 @@ class ComUpdateDownloader:
         updates: list[Any],
         emit: Callable[[ProgressEvent], None] | None = None,
     ) -> list[DownloadResult]:
-        collection = self._session.CreateUpdateCollection()
-        for update in updates:
-            collection.Add(update)
-        downloader = self._session.CreateUpdateDownloader()
-        downloader.Updates = collection
+        if not updates:
+            # An empty batch is a valid answer, not a reason to make
+            # Windows Update build machinery around nothing.
+            return []
 
         # Phase A: per-update preparation. EULA acceptance happens
         # here, explicitly, and is remembered per update. A driver
         # whose terms can't be accepted fails alone — never silently,
-        # never by sinking the batch.
+        # never by sinking the batch — and it is NOT handed to the
+        # downloader afterwards: Charon never asks Windows Update to
+        # fetch an update whose required terms were not accepted,
+        # and on a real PC one unaccepted update in the collection
+        # can fail the whole download job for all the others.
         prepared: list[tuple[bool, int | None, str, str | None]] = []
         for update in updates:
+            if update is None:
+                prepared.append(
+                    (
+                        False,
+                        None,
+                        "Charon was handed an empty update entry, "
+                        "so there was nothing to download for it.",
+                        "empty update object",
+                    )
+                )
+                continue
             title = str(_com_field(update, "Title", ""))
-            size = _com_field(update, "MaxDownloadSize", None)
-            size_bytes = int(size) if isinstance(size, (int, float)) else None
+            size_bytes = _size_bytes(
+                _com_field(update, "MaxDownloadSize", None)
+            )
             if not bool(_com_field(update, "RequiresUserAcceptance", False)):
                 prepared.append((False, size_bytes, "", None))
                 continue
@@ -219,7 +256,7 @@ class ComUpdateDownloader:
         failed_early = {
             i for i, p in enumerate(prepared) if p[3] is not None
         }
-        if updates and len(failed_early) == len(updates):
+        if len(failed_early) == len(updates):
             # The batch never reached Windows Update at all.
             return [
                 DownloadResult(
@@ -232,15 +269,39 @@ class ComUpdateDownloader:
                 for i, p in enumerate(prepared)
             ]
 
-        # Phase B: the batch fetch. A WUA-level exception here means
-        # the download could not begin — that is a designed failure
-        # for the caller, not a per-update result. The progress sink
-        # is best-effort: pywin32 exposes the sink object to COM
-        # directly; if a machine refuses that plumbing, the download
-        # runs without mid-flight progress notes.
+        # The live batch: only updates that survived preparation, in
+        # input order. The downloader's result indexes address THIS
+        # collection, so Phase C translates positions back to input
+        # indexes — the per-update contract never shifts.
+        live_indexes = [
+            i for i in range(len(updates)) if i not in failed_early
+        ]
+
+        # Phase B: the batch fetch. A WUA-level exception here —
+        # building the collection or downloader included — means the
+        # download could not begin: a designed failure for the
+        # caller, not a per-update result and never a raw COM error
+        # on a user's screen. The progress sink is best-effort:
+        # pywin32 exposes the sink object to COM directly; if a
+        # machine refuses that plumbing, the download runs without
+        # mid-flight progress notes.
+        try:
+            collection = self._session.CreateUpdateCollection()
+            for i in live_indexes:
+                collection.Add(updates[i])
+            downloader = self._session.CreateUpdateDownloader()
+            downloader.Updates = collection
+        except Exception as exc:
+            raise WuaDownloadUnavailable(
+                "Windows Update couldn't start the download. Nothing "
+                "was downloaded, and nothing was installed.",
+                detail=f"{type(exc).__name__}: {exc}",
+            ) from exc
         sink = None
         if emit is not None:
-            titles = [str(_com_field(u, "Title", "")) for u in updates]
+            titles = [
+                str(_com_field(updates[i], "Title", "")) for i in live_indexes
+            ]
             sink = _ComProgressSink(titles, emit)
         try:
             if sink is not None:
@@ -264,35 +325,51 @@ class ComUpdateDownloader:
 
         # Phase C: per-update verdicts, read individually. One
         # driver's failure is its own result — it never repaints the
-        # batch, and a success is never invented for it.
-        results: list[DownloadResult] = []
-        for i, update in enumerate(updates):
-            eula_accepted, size_bytes, note, early_error = prepared[i]
-            if early_error is not None:
-                results.append(
-                    DownloadResult(
-                        index=i,
-                        status=RESULT_FAILED,
-                        eula_accepted=eula_accepted,
-                        size_bytes=size_bytes,
-                        detail=note or early_error,
-                    )
+        # batch, and a success is never invented for it. A verdict
+        # that can't even be read is that update's failure, not the
+        # batch's crash.
+        by_index: dict[int, DownloadResult] = {}
+        for i, p in enumerate(prepared):
+            if p[3] is not None:
+                by_index[i] = DownloadResult(
+                    index=i,
+                    status=RESULT_FAILED,
+                    eula_accepted=p[0],
+                    size_bytes=p[1],
+                    detail=p[2] or p[3],
+                )
+        for position, i in enumerate(live_indexes):
+            update = updates[i]
+            eula_accepted, size_bytes = prepared[i][0], prepared[i][1]
+            try:
+                entry = downloader.GetUpdateResult(position)
+            except Exception as exc:
+                log.warning(
+                    "no verdict readable for update %s: %s",
+                    _com_field(update, "Title", ""),
+                    exc,
+                )
+                by_index[i] = DownloadResult(
+                    index=i,
+                    status=RESULT_FAILED,
+                    eula_accepted=eula_accepted,
+                    size_bytes=size_bytes,
+                    detail="Windows Update gave no verdict for "
+                    "this driver — Charon counts that as not "
+                    "downloaded.",
                 )
                 continue
-            entry = downloader.GetUpdateResult(i)
             code = _com_field(entry, "ResultCode", None)
             hresult = _com_field(entry, "HResult", None)
-            if not isinstance(code, int):
-                results.append(
-                    DownloadResult(
-                        index=i,
-                        status=RESULT_FAILED,
-                        eula_accepted=eula_accepted,
-                        size_bytes=size_bytes,
-                        detail="Windows Update gave no verdict for "
-                        "this driver — Charon counts that as not "
-                        "downloaded.",
-                    )
+            if isinstance(code, bool) or not isinstance(code, int):
+                by_index[i] = DownloadResult(
+                    index=i,
+                    status=RESULT_FAILED,
+                    eula_accepted=eula_accepted,
+                    size_bytes=size_bytes,
+                    detail="Windows Update gave no verdict for "
+                    "this driver — Charon counts that as not "
+                    "downloaded.",
                 )
                 continue
             status, status_note = _status_for_code(code)
@@ -308,18 +385,21 @@ class ComUpdateDownloader:
                     "is not staged on this PC — Charon counts that "
                     "as not downloaded."
                 )
-            results.append(
-                DownloadResult(
-                    index=i,
-                    status=status,
-                    result_code=code,
-                    hresult=int(hresult) if isinstance(hresult, int) else None,
-                    eula_accepted=eula_accepted,
-                    size_bytes=size_bytes,
-                    detail=detail,
-                )
+            by_index[i] = DownloadResult(
+                index=i,
+                status=status,
+                result_code=code,
+                hresult=(
+                    int(hresult)
+                    if isinstance(hresult, int)
+                    and not isinstance(hresult, bool)
+                    else None
+                ),
+                eula_accepted=eula_accepted,
+                size_bytes=size_bytes,
+                detail=detail,
             )
-        return results
+        return [by_index[i] for i in range(len(updates))]
 
 
 def download_updates(
