@@ -153,6 +153,46 @@ complete:
 - Failure path: stop, explain in plain language, and guide the owner to
   the toll restore point from Phase 3. The way back is part of the product.
 
+**Status: BUILT (2026-10-20).** The crossing is complete:
+
+- `charon/wua_install.py` — the one install seam: the Windows Update
+  installer, one update per call (a collection of exactly one), every
+  verdict read individually. A success Windows Update claims but the
+  PC doesn't show counts as failed. A restart it asks for is reported
+  in the outcome — the seam has no way to restart a PC, ever. (The
+  crossing ships through the same Windows Update channel that
+  sourced and staged the updates — the staged cache is consumed by
+  that channel's installer; the pnputil route above stays forbidden
+  by the safety invariants, since the cache hands out no INF paths
+  to feed it.)
+- `charon/apply.py` — pure logic: the staged set comes from the
+  ledger (exactly Phase 2's staged rows, minus crossings already
+  applied); administrator rights confirmed; **every staged update
+  re-validated against a fresh search** (a withdrawn or swapped
+  update is `no_longer_available`, never substituted); then
+  **`require_paid_toll()` runs fresh, inside the apply, moments
+  before the first install** — the gate→apply gap the Phase 3 audit
+  recorded is closed by construction, not by caching a "paid" flag.
+  Unaccepted license terms block their driver alone
+  (`eula_not_accepted`). After each crossing the device is checked
+  (no longer offered as not-installed, still reporting in, carrying
+  the new version); a failed install or an unhealthy device stops
+  the line — the rest are recorded as held back. Every verdict is
+  written to the ledger's `apply_runs` through the same locked
+  writer, and the summary names the toll's restore point as the
+  way back whenever a crossing failed.
+- `python -m charon apply` — the composed pipeline with designed
+  plain-language states for every refusal (gate, admin, search,
+  install-unavailable, ledger).
+- Safety invariants rewritten in the open for this phase: install
+  capability confined to `wua_install.py`; restart machinery
+  forbidden everywhere; a behavioral pin drives a full crossing
+  through fakes and proves the gate is re-consulted during the run
+  and that a vanished point means zero installs. 42 new tests;
+  the suite stands at 193. **Pending: Windows on-hardware
+  verification** (real installs behind a real toll on aroura;
+  reboot-required flow; the stop-the-line path on a live device).
+
 ## Phase 5 — The animated UI
 
 - PySide6, Sentinel green-and-black, premium and futuristic — a product
