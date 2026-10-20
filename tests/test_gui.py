@@ -631,11 +631,25 @@ def test_real_session_shape_and_update_collection_coclass():
        Microsoft.Update.UpdateColl yields an empty collection —
        the shape both seams now build through their collection
        factory.
+
+    The probe initializes its own COM apartment explicitly: this
+    test is about API shape, not apartment policy (activation
+    from the app's real threads is the worker probe's subject,
+    above — and a thread that reuses an already-imported COM
+    stack without initializing gets 'CoInitialize has not been
+    called', as this probe's first version rediscovered).
     """
+    import pythoncom
     import win32com.client
 
-    session = win32com.client.Dispatch("Microsoft.Update.Session")
-    with pytest.raises(Exception):
-        session.CreateUpdateCollection()
-    collection = win32com.client.Dispatch("Microsoft.Update.UpdateColl")
-    assert int(collection.Count) == 0
+    pythoncom.CoInitialize()
+    try:
+        session = win32com.client.Dispatch("Microsoft.Update.Session")
+        with pytest.raises(Exception):
+            session.CreateUpdateCollection()
+        collection = win32com.client.Dispatch(
+            "Microsoft.Update.UpdateColl"
+        )
+        assert int(collection.Count) == 0
+    finally:
+        pythoncom.CoUninitialize()
