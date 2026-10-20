@@ -73,23 +73,28 @@ Detailed phases live in [docs/ROADMAP.md](docs/ROADMAP.md):
 
 Charon is in development and runs from source — there is no installer
 yet (a single self-installing `Charon.exe` is on the roadmap's backlog,
-once the engine phases land). The scan, download staging, and the toll
-are built:
+once the engine phases land). The full Crossing — scan, download
+staging, the toll, and the apply engine — is built:
 
 ```
 python -m charon scan              # inventory drivers, flag outdated ones
 python -m charon scan --json PATH  # also write the full report as JSON
 python -m charon download          # stage outdated drivers (installs nothing)
 python -m charon toll              # pay the toll: create + verify a restore point
-python -m charon --version         # 0.4.0
+python -m charon apply             # the crossing: install the staged drivers
+python -m charon --version         # 0.5.0
 ```
 
 The scan is **read-only**: it downloads nothing, installs nothing, and
 changes nothing. Download stages updates into the Windows Update cache
 and applies nothing. The toll creates a System Restore point and
-verifies it exists. The inventory runs on Windows (it queries the
-Windows driver store and Windows Update); the test suite runs
-anywhere from recorded fixtures.
+verifies it exists. Apply takes exactly what download staged,
+re-checks each update against a fresh Windows Update search, presents
+the toll at the gate — re-verified against the PC at that moment —
+and installs one driver at a time, checking the device after each.
+A restart a driver needs is reported, never forced. The inventory
+runs on Windows (it queries the Windows driver store and Windows
+Update); the test suite runs anywhere from recorded fixtures.
 
 ## How it works
 
@@ -119,12 +124,21 @@ anywhere from recorded fixtures.
   and a skipped toll is an unpaid toll. `require_paid_toll()` is the
   gate the apply engine must pass, re-verified against the PC every
   time.
+- `charon/wua_install.py` and `charon/apply.py` are the crossing:
+  the install seam (the only module that may apply an update — the
+  Windows Update installer, one update at a time, every verdict read
+  individually, restarts reported and never forced) and the engine
+  that drives it behind the gate: staged set from the ledger, fresh
+  revalidation, the gate re-run moments before the first install,
+  a device check after each crossing, and a stopped line — never a
+  forced march — when a driver fails to cross.
 - `charon/model.py` and `charon/cli.py` produce the report (table or
   JSON) with designed plain-language failure states instead of
   tracebacks. The safety properties are test-pinned: the suite asserts
-  the exact OS commands issued and proves capability is confined to
-  its seam — no code path can install, remove, or modify a driver
-  today, and restore points exist only in the toll seam.
+  the exact OS commands issued and proves each capability is confined
+  to its one seam — downloads only in the download seam, restore
+  points only in the toll seam, installs only in the install seam,
+  and no way to restart the PC anywhere.
 
 ## Standards
 
@@ -141,23 +155,28 @@ Built to the Sentinel bar, same as the rest of the kit:
 
 ## Status
 
-**Phases 1–3 built** (2026-10-19). `python -m charon scan` inventories
-every installed driver and flags the outdated ones against what
-Windows Update itself offers — read-only. `python -m charon download`
-stages those updates into the Windows Update cache (never a silent
-substitute: every plan is re-checked against a fresh search first)
-and records them in Charon's download ledger — **nothing is
-installed**. `python -m charon toll` pays the toll: a System Restore
-point created and then **verified** by enumeration — because Windows
-silently skips a requested point when a recent one exists, Charon
-trusts only a point carrying this run's own marker, freshly stamped.
-A skipped, missing, or unverifiable toll is an unpaid toll, and the
-apply engine will be required to present a verified toll at
-`require_paid_toll()` before anything crosses. The full test suite
-(131 tests, recorded fixtures and fake Windows seams) is green;
-Windows on-hardware verification comes next. Phases 4–5 — the apply
-engine and the animated UI — follow the roadmap, in the Crossing's
-order.
+**Phases 1–4 built** (2026-10-19–20). `python -m charon scan`
+inventories every installed driver and flags the outdated ones
+against what Windows Update itself offers — read-only.
+`python -m charon download` stages those updates into the Windows
+Update cache (never a silent substitute: every plan is re-checked
+against a fresh search first) and records them in Charon's download
+ledger — **nothing is installed**. `python -m charon toll` pays the
+toll: a System Restore point created and then **verified** by
+enumeration — because Windows silently skips a requested point when
+a recent one exists, Charon trusts only a point carrying this run's
+own marker, freshly stamped. A skipped, missing, or unverifiable
+toll is an unpaid toll. And `python -m charon apply` is the
+crossing itself: the staged set from the ledger, every update
+re-validated against a fresh search, the toll presented at
+`require_paid_toll()` — re-verified against the PC moments before
+the first install, never taken on trust — then one driver at a
+time, a device check after each, the line stopped and the way back
+named if a crossing fails, and any restart reported rather than
+forced. The full test suite (193 tests, recorded fixtures and fake
+Windows seams) is green; Windows on-hardware verification comes
+next. Phase 5 — the animated UI — follows the roadmap, in the
+Crossing's order.
 
 ## License
 
