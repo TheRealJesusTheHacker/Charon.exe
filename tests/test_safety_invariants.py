@@ -19,6 +19,11 @@ file, in the open — never as a quiet edit elsewhere:
   as pure logic behind the toll gate. Driver mutation by any other
   route (pnputil and friends) remains forbidden everywhere, as do
   restarts: no module may reboot the PC, ever.
+- **Phase 5** added the window (``gui.py``), its instruments
+  (``hud.py``), and the palette (``theme.py``). The interface owns
+  NO capability of its own: it holds no session, builds no COM
+  object, runs no command — it calls the same composed pipeline
+  the CLI drives and renders what the engine reports.
 
 What never changes: driver mutation and update installation have
 NO home in this package until their own phase arrives, and each
@@ -42,10 +47,13 @@ EXPECTED_MODULES = {
     "apply.py",
     "cli.py",
     "download.py",
+    "gui.py",
+    "hud.py",
     "inventory.py",
     "matching.py",
     "model.py",
     "platform_inventory.py",
+    "theme.py",
     "toll.py",
     "wua.py",
     "wua_download.py",
@@ -171,6 +179,19 @@ def test_subprocess_confined_to_seams():
             assert literal not in text, (
                 f"command literal {literal} leaked into {name}"
             )
+
+
+def test_gui_modules_hold_no_capability():
+    # Phase 5's window and instruments orchestrate the composed
+    # pipeline — they never touch COM, never build a session,
+    # never reach a seam directly.
+    for name in ("gui.py", "hud.py", "theme.py"):
+        text = _sources()[name]
+        assert "win32com" not in text, f"COM reached into {name}"
+        assert "Dispatch(" not in text, f"a session is built in {name}"
+        assert "powershell" not in text.lower(), (
+            f"a command shell is named in {name}"
+        )
 
 
 def test_wua_session_confined_to_wua_modules():
