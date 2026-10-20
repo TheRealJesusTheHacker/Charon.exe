@@ -278,7 +278,7 @@ class MainWindow(QMainWindow):
         self.reboot_banner = QLabel("")
         self.reboot_banner.setWordWrap(True)
         self.reboot_banner.setStyleSheet(
-            f"color: {theme.GOLD}; border: 1px solid {theme.HAIRLINE}; "
+            f"color: {theme.ACCENT}; border: 1px solid {theme.PANEL_BORDER}; "
             f"border-radius: 8px; padding: 8px; "
             f"background: {theme.PANEL};"
         )
@@ -311,9 +311,9 @@ class MainWindow(QMainWindow):
         self.toll_refusal = QLabel("")
         self.toll_refusal.setWordWrap(True)
         self.toll_refusal.setStyleSheet(
-            f"color: {theme.DANGER}; border: 1px solid {theme.HAIRLINE}; "
+            f"color: {theme.RED_TEXT}; border: 1px solid {theme.RED}; "
             f"border-radius: 8px; padding: 8px; "
-            f"background: {theme.PANEL};"
+            f"background: {theme.RED};"
         )
         self.toll_refusal.setVisible(False)
         layout.addWidget(self.toll_refusal)

@@ -39,15 +39,18 @@ from PySide6.QtWidgets import (
 
 from . import theme
 
-# Driver-row states → (chip text color, chip border).
+# Driver-row states → (chip text color, chip border, chip fill).
+# Every state is text on the raised face except "bad": danger is
+# the fleet treatment — white text on the danger red itself, a
+# fill that cannot be missed or misread as decoration.
 CHIP_STYLES = {
-    "waiting": (theme.TEXT_FAINT, theme.HAIRLINE),
-    "working": (theme.GREEN, theme.GREEN_DEEP),
-    "done": (theme.GREEN_SOFT, theme.GREEN_DEEP),
-    "warn": (theme.GOLD, theme.HAIRLINE),
-    "bad": (theme.DANGER, theme.HAIRLINE),
-    "held": (theme.GOLD, theme.HAIRLINE),
-    "info": (theme.TEXT, theme.HAIRLINE),
+    "waiting": (theme.TEXT_FAINT, theme.PANEL_BORDER, theme.INPUT_BG),
+    "working": (theme.PRIMARY, theme.PANEL_BORDER, theme.INPUT_BG),
+    "done": (theme.PRIMARY, theme.PANEL_BORDER, theme.INPUT_BG),
+    "warn": (theme.ACCENT, theme.PANEL_BORDER, theme.INPUT_BG),
+    "bad": (theme.RED_TEXT, theme.RED, theme.RED),
+    "held": (theme.ACCENT, theme.PANEL_BORDER, theme.INPUT_BG),
+    "info": (theme.TEXT, theme.PANEL_BORDER, theme.INPUT_BG),
 }
 
 
@@ -100,12 +103,12 @@ class SweepWidget(QWidget):
 
         # Concentric soundings.
         for frac in (1.0, 0.66, 0.33):
-            painter.setPen(QPen(_color(theme.HAIRLINE), 1))
+            painter.setPen(QPen(_color(theme.PANEL_BORDER), 1))
             painter.setBrush(Qt.NoBrush)
             r = radius * frac
             painter.drawEllipse(QPointF(cx, cy), r, r)
         # Cross lines.
-        painter.setPen(QPen(_color(theme.HAIRLINE, 160), 1))
+        painter.setPen(QPen(_color(theme.PANEL_BORDER, 160), 1))
         painter.drawLine(
             QPointF(cx - radius, cy), QPointF(cx + radius, cy)
         )
@@ -123,16 +126,16 @@ class SweepWidget(QWidget):
                 55,
             )
             path.closeSubpath()
-            painter.fillPath(path, _color(theme.GREEN, 34))
+            painter.fillPath(path, _color(theme.PRIMARY, 34))
             rad = math.radians(self._angle)
-            painter.setPen(QPen(_color(theme.GREEN), 2))
+            painter.setPen(QPen(_color(theme.PRIMARY), 2))
             painter.drawLine(
                 QPointF(cx, cy),
                 QPointF(cx + radius * math.cos(rad), cy - radius * math.sin(rad)),
             )
 
         # Blips: one per device found, placed on the rings.
-        painter.setBrush(_color(theme.GREEN_SOFT))
+        painter.setBrush(_color(theme.PRIMARY))
         painter.setPen(Qt.NoPen)
         for i in range(self._blips):
             golden = i * 2.39996  # golden-angle spread, no clumping
@@ -142,7 +145,7 @@ class SweepWidget(QWidget):
             painter.drawEllipse(QPointF(x, y), 3.2, 3.2)
 
         # The lantern itself.
-        painter.setBrush(_color(theme.GREEN))
+        painter.setBrush(_color(theme.PRIMARY))
         painter.drawEllipse(QPointF(cx, cy), 4.5, 4.5)
         painter.end()
 
@@ -208,7 +211,7 @@ class JourneyWidget(QWidget):
                 river.moveTo(margin + px, y + wave)
             else:
                 river.lineTo(margin + px, y + wave)
-        painter.setPen(QPen(_color(theme.HAIRLINE), 2))
+        painter.setPen(QPen(_color(theme.PANEL_BORDER), 2))
         painter.drawPath(river)
         crossed = QPainterPath()
         ferry_x = station_x(0) + step * self._ferry
@@ -218,7 +221,7 @@ class JourneyWidget(QWidget):
                 crossed.moveTo(margin + px, y + wave)
             else:
                 crossed.lineTo(margin + px, y + wave)
-        painter.setPen(QPen(_color(theme.GREEN_DEEP), 2))
+        painter.setPen(QPen(_color(theme.PRIMARY), 2))
         painter.drawPath(crossed)
 
         # Stations.
@@ -227,21 +230,24 @@ class JourneyWidget(QWidget):
             done = i <= self._completed or (i == 2 and self._toll_paid and self._completed >= 2)
             active = i == self._current and not done
             if done:
-                painter.setBrush(_color(theme.GREEN_DEEP))
-                painter.setPen(QPen(_color(theme.GREEN), 2))
+                painter.setBrush(_color(theme.PRIMARY))
+                painter.setPen(QPen(_color(theme.PRIMARY), 2))
             elif active:
                 pulse = 0.55 + 0.45 * math.sin(self._phase * 2)
-                painter.setBrush(_color(theme.PANEL_RAISED))
+                painter.setBrush(_color(theme.INPUT_BG))
                 painter.setPen(
-                    QPen(_color(theme.GREEN, int(120 + 120 * pulse)), 2)
+                    QPen(_color(theme.PRIMARY, int(120 + 120 * pulse)), 2)
                 )
             else:
                 painter.setBrush(_color(theme.PANEL))
-                painter.setPen(QPen(_color(theme.HAIRLINE), 2))
+                painter.setPen(QPen(_color(theme.PANEL_BORDER), 2))
             painter.drawEllipse(QPointF(x, y), 13, 13)
             painter.setPen(QPen(_color(theme.TEXT), 1))
             painter.setFont(self.font())
             if done:
+                # The check sits on the aqua fill — it is drawn in
+                # the dark text that fill is paired with.
+                painter.setPen(QPen(_color(theme.PRIMARY_DARK_TEXT), 1))
                 painter.drawText(
                     QRectF(x - 13, y - 9, 26, 18),
                     Qt.AlignCenter,
@@ -267,8 +273,8 @@ class JourneyWidget(QWidget):
         boat.lineTo(ferry_x, fy - 2)
         boat.lineTo(ferry_x - 7, fy - 7)
         boat.closeSubpath()
-        painter.fillPath(boat, _color(theme.GREEN))
-        painter.setBrush(_color(theme.GREEN_SOFT))
+        painter.fillPath(boat, _color(theme.PRIMARY))
+        painter.setBrush(_color(theme.PRIMARY))
         painter.setPen(Qt.NoPen)
         painter.drawEllipse(QPointF(ferry_x, fy - 9), 2.2, 2.2)
         painter.end()
@@ -331,12 +337,12 @@ class DriverRow(QFrame):
 
     # -- state -----------------------------------------------------
     def set_state(self, state: str, text: str, detail: str = "") -> None:
-        fg, border = CHIP_STYLES.get(state, CHIP_STYLES["info"])
+        fg, border, fill = CHIP_STYLES.get(state, CHIP_STYLES["info"])
         self.chip.setText(text)
         self.chip.setStyleSheet(
             f"color: {fg}; border: 1px solid {border}; "
             f"border-radius: 8px; padding: 3px 6px; font-size: 11px; "
-            f"background: {theme.PANEL_RAISED};"
+            f"background: {fill};"
         )
         if detail:
             self.detail_label.setText(detail)

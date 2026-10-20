@@ -436,6 +436,31 @@ def test_text_pairings_meet_wcag_contrast(name, pair):
     assert _ratio(fg, bg) >= 4.5, f"{name}: {_ratio(fg, bg):.2f}:1"
 
 
+def test_palette_is_charons_own_styx_palette():
+    """The namesake pin: these exact values ARE Charon's identity
+    — the Styx palette (charcoal-slate, river aqua, obol gold),
+    design-proven for contrast before it landed. A drive-by
+    recolor, including back to the shared house green, fails
+    here on purpose. The danger red is the fleet constant."""
+    expected = {
+        "BG": "#07090b",
+        "PANEL": "#0d1216",
+        "PANEL_BORDER": "#22303a",
+        "INPUT_BG": "#0a0e11",
+        "TEXT": "#e8eef0",
+        "TEXT_FAINT": "#93a7b1",
+        "PRIMARY": "#2fbfa8",
+        "PRIMARY_DARK_TEXT": "#04120f",
+        "ACCENT": "#bfa05a",
+        "DISABLED_TEXT": "#7e939e",
+        "RED": "#b03a2e",
+        "RED_TEXT": "#ffffff",
+    }
+    for name, value in expected.items():
+        assert getattr(theme, name) == value, name
+    assert theme.STAMP == theme.PRIMARY
+
+
 def test_palette_contains_no_purple():
     import colorsys
 
