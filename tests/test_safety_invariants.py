@@ -13,6 +13,12 @@ file, in the open — never as a quiet edit elsewhere:
   that may create or query them — and Charon may still never flip
   System Protection itself (``Enable-/Disable-ComputerRestore``
   forbidden everywhere).
+- **Phase 4** gave installing its one seam, ``wua_install.py`` —
+  the only module that may build the WUA installer or call its
+  install method — and the crossing itself lives in ``apply.py``
+  as pure logic behind the toll gate. Driver mutation by any other
+  route (pnputil and friends) remains forbidden everywhere, as do
+  restarts: no module may reboot the PC, ever.
 
 What never changes: driver mutation and update installation have
 NO home in this package until their own phase arrives, and each
@@ -33,6 +39,7 @@ PACKAGE = Path(__file__).resolve().parent.parent / "charon"
 EXPECTED_MODULES = {
     "__init__.py",
     "__main__.py",
+    "apply.py",
     "cli.py",
     "download.py",
     "inventory.py",
@@ -42,6 +49,7 @@ EXPECTED_MODULES = {
     "toll.py",
     "wua.py",
     "wua_download.py",
+    "wua_install.py",
 }
 
 # Capability that has no home ANYWHERE in the package yet.
@@ -51,11 +59,15 @@ FORBIDDEN_TOKENS = [
     "delete-driver",
     "remove-driver",
     "/install",
-    # WUA machinery that APPLIES updates — the crossing is Phase 4,
-    # behind the toll, and not one line early.
-    "CreateUpdateInstaller",
-    ".Install(",
+    # WUA's asynchronous install entry point — Charon's crossing is
+    # synchronous, one update at a time, through the one seam.
     "BeginInstall",
+    # Restarting the PC: a reboot is reported, never forced, and no
+    # module may so much as name the machinery that would do it.
+    "InitiateSystemShutdown",
+    "ExitWindowsEx",
+    "Restart-Computer",
+    "shutdown",
     # Charon never flips System Protection itself — detecting the
     # state and guiding the owner is the whole of its mandate.
     "Enable-ComputerRestore",
@@ -74,7 +86,6 @@ CONFINED_TOKENS = {
     # Phase 2: the fetch surface lives in the download seam only.
     "wua_download.py": [
         "CreateUpdateDownloader",
-        "CreateUpdateCollection",
         ".Download(",
         "BeginDownload",
         "AcceptEula",
@@ -87,6 +98,11 @@ CONFINED_TOKENS = {
         "SRSetRestorePoint",
         "SystemRestore",
         "RestorePoint",
+    ],
+    # Phase 4: the installer surface lives in the install seam only.
+    "wua_install.py": [
+        "CreateUpdateInstaller",
+        ".Install(",
     ],
 }
 
@@ -128,6 +144,18 @@ def test_confined_capability_lives_only_in_its_seam(token, home):
         )
 
 
+def test_update_collection_confined_to_the_two_wua_batch_seams():
+    # An update collection is a neutral container — the one WUA
+    # shape both the fetch seam and the apply seam must build.
+    # It may exist in exactly those two modules and nowhere else.
+    for name, text in _sources().items():
+        if name in ("wua_download.py", "wua_install.py"):
+            continue
+        assert "CreateUpdateCollection" not in text, (
+            f"update collection built in charon/{name}"
+        )
+
+
 def test_subprocess_confined_to_seams():
     # Only the seam modules may execute commands. Other modules may
     # NAME the data sources (identifiers like ``pnputil_entries``,
@@ -146,11 +174,11 @@ def test_subprocess_confined_to_seams():
 
 
 def test_wua_session_confined_to_wua_modules():
-    # Both WUA seams hold a session of their own (the searcher asks,
-    # the downloader fetches); the searcher factory itself belongs
-    # to the search seam alone.
+    # The WUA seams hold a session of their own (the searcher asks,
+    # the downloader fetches, the installer applies); the searcher
+    # factory itself belongs to the search seam alone.
     for name, text in _sources().items():
-        if name in ("wua.py", "wua_download.py"):
+        if name in ("wua.py", "wua_download.py", "wua_install.py"):
             continue
         assert "Microsoft.Update" not in text, f"WUA leaked into {name}"
     for name, text in _sources().items():
@@ -293,3 +321,120 @@ def test_behavioral_download_run_issues_exactly_the_pinned_sequence(
     assert len(session.download_calls) == 1
     assert len(session.download_calls[0]) == 4
     assert all(r.status == "succeeded" for r in results)
+
+
+def test_behavioral_apply_run_crosses_only_behind_the_fresh_gate(
+    tmp_path,
+):
+    """Phase 4's behavioral pin: a full crossing, driven through
+    fakes. A driver is staged in the ledger, a toll is on record —
+    and the run must (a) re-verify the toll against the 'PC' during
+    the apply itself, not trust the paper; (b) build the installer
+    and cross exactly one update at a time; (c) never build the
+    downloader — the crossing is not a fetch. The toll fake's point
+    vanishing must close the gate: the same run with the point
+    deleted installs NOTHING."""
+    from datetime import datetime, timezone
+
+    from charon import cli, toll
+    from charon.download import append_run_to_ledger
+    from charon.download import DownloadPlanEntry, StagedResult
+    from charon.model import UpdateCandidate
+    from charon.toll import RestorePointInfo, TollProbe, TollRecord
+    from charon.wua_install import ComUpdateInstaller
+    from conftest import FakeComSession, FakeComUpdate, FakeSearcher
+
+    created = datetime.now(timezone.utc)
+    record = TollRecord(
+        sequence_number=41,
+        description="CHARON.EXE crossing checkpoint pin #beef",
+        marker="pin #beef",
+        created_at=created,
+        verified_at=created,
+        computer="pin-pc",
+    )
+
+    class GateBackend:
+        """probe + enumeration only — the apply path never creates."""
+
+        def __init__(self, points):
+            self._points = list(points)
+            self.list_calls = 0
+
+        def probe(self):
+            return TollProbe(
+                is_admin=True, protection_enabled=True, system_drive="C:"
+            )
+
+        def create_restore_point(self, description):
+            raise AssertionError("apply must never create a point")
+
+        def list_restore_points(self):
+            self.list_calls += 1
+            return list(self._points)
+
+    update = FakeComUpdate(
+        title="Pin Driver", version="2.0", driver_model="Pin Device"
+    )
+
+    def fresh_ledger(name):
+        path = tmp_path / name
+        append_run_to_ledger(
+            path,
+            [
+                StagedResult(
+                    entry=DownloadPlanEntry(
+                        update=UpdateCandidate(
+                            title="Pin Driver", version="2.0"
+                        ),
+                        device_name="Pin Device",
+                        device_id="PIN-1",
+                    ),
+                    status="succeeded",
+                )
+            ],
+        )
+        toll.record_toll(path, record)
+        return path
+
+    point = RestorePointInfo(
+        sequence_number=41,
+        description=record.description,
+        created_at=created,
+        restore_point_type=12,
+    )
+    searcher = FakeSearcher(updates=[update.raw()])
+    session = FakeComSession()
+    backend = GateBackend([point])
+
+    results, toll_record, _path = cli.run_apply(
+        toll_backend=backend,
+        searcher=searcher,
+        installer=ComUpdateInstaller(session),
+        verify=lambda entries, cand: (True, ""),
+        ledger_path=fresh_ledger("ledger.json"),
+    )
+    assert toll_record == record
+    assert [r.status for r in results] == ["succeeded"]
+    # The gate re-verified against the PC during THIS run…
+    assert backend.list_calls >= 1
+    # …the installer crossed exactly one update, alone…
+    assert session.installer_constructed == 1
+    assert session.install_calls == [[update]]
+    # …and nothing was fetched in the crossing's name.
+    assert session.downloader_constructed == 0
+    assert session.download_calls == []
+
+    # The point vanishes: the same crossing now installs NOTHING —
+    # the gate closes on paper proof alone, every time.
+    session2 = FakeComSession()
+    with pytest.raises(toll.TollUnpaid):
+        cli.run_apply(
+            toll_backend=GateBackend([]),
+            searcher=searcher,
+            installer=ComUpdateInstaller(session2),
+            verify=lambda entries, cand: (True, ""),
+            ledger_path=fresh_ledger("ledger2.json"),
+        )
+    assert session2.installer_constructed == 0
+    assert session2.install_calls == []
