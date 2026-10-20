@@ -195,18 +195,36 @@ complete:
 
 ## Phase 5 — The animated UI
 
+**Status: BUILT (2026-10-20) — v1.0.0. The five-phase roadmap is
+complete.** The animated window is built:
+
 - PySide6, Sentinel green-and-black, premium and futuristic — a product
   people screenshot: HUD-style animated scan sweep over the driver
   manifest, the river-crossing journey visual through Download → Toll →
-  Apply, animated per-driver progress.
+  Apply, animated per-driver progress — all of it animated from the
+  engine's own progress events, on a worker thread, so the screen only
+  ever shows work actually happening.
+- One window, one journey: `charon/gui.py` drives the same composed
+  pipeline as the CLI. The interface owns no capability of its own —
+  no COM, no commands — pinned by the invariant suite. The crossing
+  stays locked until this visit's toll verifies and the ticket stamps
+  **TOLL PAID** — and the engine still re-verifies the gate behind
+  the button; a gate that closes mid-flow returns the owner to the
+  toll screen with the reason.
 - Every state is a designed screen: scanning, updates found / none found,
   downloading, **toll paid** (restore point confirmed, shown like a
-  stamped ticket), crossing (applying), a driver failed (ferry holds
-  position, way back offered), done.
+  stamped ticket), a toll refused (with the plain-language way
+  forward), crossing (applying), a driver held back, a restart needed
+  (reported, never forced), done.
 - Plain language only. No raw OS errors, no codes without an explanation
   and one clear next action.
-- Same flagship standard as Argus.exe: no light backgrounds, contrast
-  verified, every control functional.
+- Same flagship standard as Argus.exe: no light backgrounds, every
+  text pairing pinned at ≥ 4.5:1 contrast by test, no purple anywhere
+  in the palette (also pinned), every control functional. GUI tests
+  run headlessly in the suite; audit screenshots of the main states
+  live in `phase5-audit/` locally.
+- **Pending: Windows on-hardware verification** — the window on a
+  real display and the full pipeline against a real PC on aroura.
 
 ## Later / backlog
 
