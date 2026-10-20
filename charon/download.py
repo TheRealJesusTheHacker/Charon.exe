@@ -524,7 +524,17 @@ def _ledger_lock(path: Path):
                     os.O_CREAT | os.O_RDWR,
                     0o644,
                 )
-            except OSError:
+            except OSError as exc:
+                # Proceed unlocked (a lost race costs history, never
+                # safety) — but never in silence: an unlogged unlocked
+                # write is indistinguishable from a locked one in the
+                # record, and silent races are how records vanish.
+                log.warning(
+                    "ledger lock file for %s could not be opened "
+                    "(%s); writing unlocked",
+                    path,
+                    exc,
+                )
                 fd = None  # proceed unlocked; the write itself decides
             if fd is not None:
                 try:
@@ -548,6 +558,16 @@ def _ledger_lock(path: Path):
                                 break
                             except OSError:
                                 time.sleep(0.05)
+                        if not locked:
+                            # The retry budget ran out: the write
+                            # still proceeds unlocked, and that is
+                            # said out loud — the same honesty rule
+                            # as the open-failure path above.
+                            log.warning(
+                                "ledger lock for %s could not be "
+                                "taken in time; writing unlocked",
+                                path,
+                            )
                     else:
                         import fcntl
 

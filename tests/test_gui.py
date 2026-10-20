@@ -587,12 +587,15 @@ def test_close_while_engine_is_working_is_refused(window, monkeypatch, qapp):
     reason="COM apartment behaviour is Windows-only",
 )
 def test_engine_worker_can_use_com_on_windows(window, qapp):
-    """The engine runs on the worker thread, and every thread that
-    touches COM must initialize its own apartment first — pythoncom
-    initializes only the thread that imports it (the main thread).
-    Without that, creating the Windows Update session on the worker
-    raises 'CoInitialize has not been called' and every GUI scan
-    reports that Windows Update didn't answer."""
+    """Probe/guard: the engine runs on the worker thread, so COM
+    activation from that thread is exercised against the real thing
+    on the Windows runner — creating the Windows Update session,
+    exactly what a GUI scan does first. The 2026-10-20 kit hunt
+    suspected an apartment defect here ('CoInitialize has not been
+    called'); the probe PASSED on windows-latest pre-fix, clearing
+    that suspicion with evidence, and stays as the guard so a
+    future threading change that breaks it fails here, not on a
+    user's PC."""
     outcome = {}
 
     def engine(emit):

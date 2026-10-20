@@ -364,6 +364,21 @@ class MainWindow(QMainWindow):
     def _busy(self) -> bool:
         return self._worker is not None and self._worker.isRunning()
 
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt naming)
+        """Refuse to close mid-step: destroying a window whose worker
+        thread is still running makes Qt abort the whole process —
+        on a real PC that reads as a crash, mid-scan or mid-crossing.
+        The close is refused in plain language instead; once the step
+        finishes, the window closes as asked."""
+        if self._busy():
+            self._set_status(
+                "Charon is in the middle of a step — let it finish "
+                "before closing the window."
+            )
+            event.ignore()
+            return
+        super().closeEvent(event)
+
     def _run_worker(self, fn, on_success, on_failure) -> None:
         if self._busy():
             return  # one engine step at a time — the flow is linear

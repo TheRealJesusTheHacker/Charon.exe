@@ -1,5 +1,55 @@
 # Changelog — CHARON.EXE
 
+## v1.0.2 — 2026-10-20
+
+Kit-hunt patch: a fleet-wide hunt for defects that only a real
+Windows machine could expose, run before the owner's next
+physical test of the portable edition.
+
+- **Download verdicts are now read from the object Windows
+  actually puts them on (critical).** In `charon/wua_download.py`,
+  the download seam read each update's verdict from the
+  downloader (`downloader.GetUpdateResult(...)`) and passed a
+  progress sink to the synchronous fetch. The documented WUA API
+  (wuapi.h, `IUpdateDownloader`) is different in both places:
+  `Download()` takes no argument and **returns** an
+  `IDownloadResult`, and the per-update verdicts are read from
+  that returned object. On a real PC the old code's verdict reads
+  all failed, so every download — however the fetch itself went —
+  was recorded and reported as "not downloaded", and the crossing
+  could never begin. The seam now calls `Download()` as
+  documented and reads verdicts from its return value; the
+  progress-sink machinery is gone (progress callbacks belong to
+  the separate asynchronous job API this seam does not use, and
+  callers already treat progress as a bonus, never a promise).
+  The shared test fake had been built to the seam's mistaken
+  shape, which is why the suite stayed green; the fake now models
+  the documented API, and new regression tests model the real
+  downloader shape exactly (no `GetUpdateResult` on the
+  downloader, a no-argument `Download()` returning the result).
+  Both failed before the fix — locally and on the Windows runner.
+- **The window refuses to close mid-step.** Closing the window
+  while an engine worker thread was running was accepted, and
+  destroying a running worker thread makes Qt abort the whole
+  process — a crash, mid-scan or mid-crossing. The window now
+  refuses the close in plain language ("let it finish before
+  closing the window") until the step completes. Regression
+  test included (failed before the fix on Linux and Windows).
+- **The ledger lock no longer falls silent.** In
+  `charon/download.py::_ledger_lock`, two paths proceeded to
+  write unlocked without a word — the lock file failing to open,
+  and the Windows retry budget running out under contention.
+  Writing unlocked remains the designed fallback (a lost race
+  costs history, never safety), but both paths now log a warning,
+  like the lock-acquisition failure path already did. Regression
+  test included (failed before the fix on Linux and Windows).
+- **Probed and cleared, with evidence:** creating the Windows
+  Update COM session on the GUI worker thread works on the
+  Windows runner (a suspicion the hunt raised; a permanent
+  Windows-only probe test now guards it), and the v1.0.1 ledger
+  lock fix was re-probed adversarially (seed-byte, offset, and
+  unlock paths) — no sibling defect found there.
+
 ## v1.0.1 — 2026-10-20
 
 - **The portable edition ships.** This is the first release to

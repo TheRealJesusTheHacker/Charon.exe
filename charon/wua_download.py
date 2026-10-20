@@ -31,10 +31,7 @@ import sys
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol
 
-from .download import (
-    EVENT_UPDATE_PROGRESS,
-    ProgressEvent,
-)
+from .download import ProgressEvent
 from .wua import WuaUnavailable  # noqa: F401  (re-exported for callers)
 
 log = logging.getLogger("charon.wua_download")
@@ -147,43 +144,6 @@ def _status_for_code(code: int) -> tuple[str, str]:
     return RESULT_FAILED, f"Windows Update returned an unknown result ({code})."
 
 
-class _ComProgressSink:
-    """Best-effort bridge from WUA's progress callback to ``emit``.
-
-    WUA reports progress per update index; the caller maps indexes to
-    devices, so the sink only needs the ordered titles. If the COM
-    event plumbing can't be set up on a given machine, the download
-    still works — only the mid-download progress notes go quiet.
-    """
-
-    def __init__(self, titles: list[str], emit):
-        self._titles = titles
-        self._emit = emit
-
-    def OnProgressChanged(self, progress):  # COM callback name — WUA's API
-        try:
-            count = len(self._titles)
-            for index in range(count):
-                entry = progress.GetUpdateResult(index)
-                percent = _com_field(entry, "PercentComplete", None)
-                if percent is None:
-                    continue
-                if isinstance(percent, float) and not math.isfinite(percent):
-                    continue
-                self._emit(
-                    ProgressEvent(
-                        kind=EVENT_UPDATE_PROGRESS,
-                        title=self._titles[index],
-                        # A percentage means 0–100; anything outside
-                        # that is WUA noise, clamped before a screen
-                        # ever renders it.
-                        percent=max(0, min(100, int(percent))),
-                    )
-                )
-        except Exception:  # a progress hiccup must never sink a download
-            log.debug("WUA progress callback failed", exc_info=True)
-
-
 class ComUpdateDownloader:
     """The real Windows downloader, backed by the WUA COM session.
 
@@ -203,6 +163,11 @@ class ComUpdateDownloader:
         updates: list[Any],
         emit: Callable[[ProgressEvent], None] | None = None,
     ) -> list[DownloadResult]:
+        # ``emit`` is accepted for the seam protocol's shape; the
+        # synchronous fetch below reports no intermediate progress
+        # (progress callbacks belong to the asynchronous job API),
+        # so no progress events are emitted here — callers already
+        # treat progress as a bonus, never a promise.
         if not updates:
             # An empty batch is a valid answer, not a reason to make
             # Windows Update build machinery around nothing.
@@ -281,41 +246,27 @@ class ComUpdateDownloader:
         # building the collection or downloader included — means the
         # download could not begin: a designed failure for the
         # caller, not a per-update result and never a raw COM error
-        # on a user's screen. The progress sink is best-effort:
-        # pywin32 exposes the sink object to COM directly; if a
-        # machine refuses that plumbing, the download runs without
-        # mid-flight progress notes.
+        # on a user's screen.
+        #
+        # The real API shape (wuapi.h, IUpdateDownloader): the
+        # synchronous ``Download()`` takes NO argument — progress
+        # callbacks belong to the separate asynchronous job API,
+        # which this seam does not use — and it RETURNS the result
+        # object the per-update verdicts are read from in Phase C.
+        # An earlier version of this seam passed a progress sink to
+        # ``Download()`` (refused by the real object) and then read
+        # verdicts from the downloader itself, which has no such
+        # method — on a real PC every verdict came back unreadable
+        # and every download was reported failed, however the fetch
+        # itself had gone. The kit-hunt regression tests pin the
+        # documented shape.
         try:
             collection = self._session.CreateUpdateCollection()
             for i in live_indexes:
                 collection.Add(updates[i])
             downloader = self._session.CreateUpdateDownloader()
             downloader.Updates = collection
-        except Exception as exc:
-            raise WuaDownloadUnavailable(
-                "Windows Update couldn't start the download. Nothing "
-                "was downloaded, and nothing was installed.",
-                detail=f"{type(exc).__name__}: {exc}",
-            ) from exc
-        sink = None
-        if emit is not None:
-            titles = [
-                str(_com_field(updates[i], "Title", "")) for i in live_indexes
-            ]
-            sink = _ComProgressSink(titles, emit)
-        try:
-            if sink is not None:
-                try:
-                    downloader.Download(sink)
-                except Exception:
-                    log.debug(
-                        "progress callback refused; downloading "
-                        "without progress notes",
-                        exc_info=True,
-                    )
-                    downloader.Download()
-            else:
-                downloader.Download()
+            download_result = downloader.Download()
         except Exception as exc:
             raise WuaDownloadUnavailable(
                 "Windows Update couldn't start the download. Nothing "
@@ -342,7 +293,9 @@ class ComUpdateDownloader:
             update = updates[i]
             eula_accepted, size_bytes = prepared[i][0], prepared[i][1]
             try:
-                entry = downloader.GetUpdateResult(position)
+                if download_result is None:
+                    raise ValueError("download returned no result object")
+                entry = download_result.GetUpdateResult(position)
             except Exception as exc:
                 log.warning(
                     "no verdict readable for update %s: %s",

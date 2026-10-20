@@ -230,31 +230,47 @@ class _FakeCollection:
         self.items.append(item)
 
 
-_UNSET = object()
+class _FakeDownloadResult:
+    """The result object the real Download() returns (IDownloadResult).
 
+    Per-update verdicts live HERE in the real API — the downloader
+    itself has no GetUpdateResult method. (The kit hunt of
+    2026-10-20 found the fake previously served verdicts from the
+    downloader, mirroring the seam's mistaken shape and hiding that
+    every real download would be reported failed.)
+    """
 
-class _FakeComDownloader:
-    """The downloader half of FakeComSession (records; serves codes)."""
-
-    def __init__(self, session):
+    def __init__(self, session, downloader):
         self._session = session
-        self.Updates = None
-        self._sink = _UNSET
-
-    def Download(self, callback=_UNSET):
-        self._sink = callback
-        updates = list(self.Updates.items) if self.Updates else []
-        self._session.download_calls.append(updates)
-        return None
+        self._downloader = downloader
 
     def GetUpdateResult(self, index):
-        updates = list(self.Updates.items) if self.Updates else []
+        updates = list(self._downloader.Updates.items) if self._downloader.Updates else []
         title = updates[index].Title
         code = self._session.codes_by_title.get(
             title, self._session.default_code
         )
         hresult = 0 if code in (2, 3) else -2145124300
         return FakeDownloadEntry(code, hresult)
+
+
+class _FakeComDownloader:
+    """The downloader half of FakeComSession (records; serves codes).
+
+    Shaped like the documented IUpdateDownloader: ``Download()``
+    takes no argument and returns a :class:`_FakeDownloadResult`.
+    Any other member — GetUpdateResult included — is a loud failure,
+    exactly the discipline a test double owes the real API.
+    """
+
+    def __init__(self, session):
+        self._session = session
+        self.Updates = None
+
+    def Download(self):
+        updates = list(self.Updates.items) if self.Updates else []
+        self._session.download_calls.append(updates)
+        return _FakeDownloadResult(self._session, self)
 
     def __getattr__(self, name):
         raise AssertionError(f"unexpected downloader member requested: {name}")

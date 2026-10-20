@@ -2,7 +2,7 @@
 
 **Sentinel Safeguard LLC — the Windows driver updater that pays the toll first.**
 
-[![Version](https://img.shields.io/badge/version-v1.0.1-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.1)
+[![Version](https://img.shields.io/badge/version-v1.0.2-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.2)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white)](https://github.com/TheRealJesusTheHacker/Charon.exe)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![UI](https://img.shields.io/badge/UI-PySide6-41cd52?style=flat-square)](https://doc.qt.io/qtforpython-6/)
@@ -173,7 +173,7 @@ The workflow is fixed in the code, not suggested by it:
 ## Installation
 
 **The portable edition has shipped — in
-[v1.0.1](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.1).**
+[v1.0.2](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.2).**
 Download `CharonPortable.zip` from that release (its
 `SHA256SUMS.txt` is attached alongside it), unzip it anywhere —
 a folder on the PC or the Sentinel IT Toolkit USB — open the
@@ -259,7 +259,7 @@ python -m charon download          # stage outdated drivers (installs nothing)
 python -m charon toll              # pay the toll: create + verify a restore point
 python -m charon apply             # the crossing: install the staged drivers
 python -m charon gui               # the window: the whole crossing, guided
-python -m charon --version         # 1.0.1
+python -m charon --version         # 1.0.2
 ```
 
 | Command | Options | Notes |
@@ -435,6 +435,20 @@ edition is no longer backlog: the PyInstaller one-folder spec,
 the pinned CI dependency list, the portable readme, and the
 release workflow are all committed under `packaging/` and
 `.github/workflows/` (see [docs/ROADMAP.md](docs/ROADMAP.md)).
+
+**v1.0.2 — the kit hunt (2026-10-20).** A fleet-wide hunt for
+defects only a real Windows machine could expose found one in
+Charon's download seam: it read each download's verdict from the
+downloader object, but Windows Update keeps those verdicts on the
+result object its synchronous `Download()` returns — so on a real
+PC every staged download would have been reported "not
+downloaded", however the fetch itself went. The test fake had
+been built to the same mistaken shape, which is why the suite was
+green; the fake now models the documented API and regression
+tests pin it. The same hunt fixed the window closing mid-step
+(it now refuses, in plain language, until the step finishes) and
+made the ledger lock's unlocked fallbacks log a warning instead
+of proceeding in silence. See [CHANGELOG.md](CHANGELOG.md).
 
 **Pending, stated plainly: Windows on-hardware verification.**
 Every phase's engine is proven against recorded fixtures and mocked

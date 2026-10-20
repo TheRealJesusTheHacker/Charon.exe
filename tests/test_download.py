@@ -666,21 +666,30 @@ def test_downloader_setup_failure_is_designed_not_raw():
 
 def test_unreadable_verdict_fails_only_that_update():
     """One update whose GetUpdateResult raises used to sink the
-    whole batch with a raw exception."""
+    whole batch with a raw exception. Verdicts are read from the
+    object Download() returns — that is the member patched here,
+    because it is the only place the real API keeps them."""
     session = FakeComSession()
     real_create = session.CreateUpdateDownloader
 
     def create():
         downloader = real_create()
-        real_result = downloader.GetUpdateResult
+        real_download = downloader.Download
 
-        def wrapped(index):
-            updates = list(downloader.Updates.items)
-            if updates[index].Title == TOUCH.title:
-                raise RuntimeError("verdict exploded")
-            return real_result(index)
+        def download():
+            result = real_download()
+            real_get = result.GetUpdateResult
 
-        downloader.GetUpdateResult = wrapped
+            def wrapped(index):
+                updates = list(downloader.Updates.items)
+                if updates[index].Title == TOUCH.title:
+                    raise RuntimeError("verdict exploded")
+                return real_get(index)
+
+            result.GetUpdateResult = wrapped
+            return result
+
+        downloader.Download = download
         return downloader
 
     session.CreateUpdateDownloader = create

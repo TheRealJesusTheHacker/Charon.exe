@@ -52,12 +52,12 @@ ROOT = Path(SPECPATH).parent
 
 # Windows version resource for the exe: File Explorer, the task
 # manager, and SmartScreen all read THIS — an exe with no version
-# info looks anonymous. Version 1.0.1 matches charon.__version__
+# info looks anonymous. Version 1.0.2 matches charon.__version__
 # (the release workflow's tag check keeps them from drifting).
 version_info = VSVersionInfo(
     ffi=FixedFileInfo(
-        filevers=(1, 0, 1, 0),
-        prodvers=(1, 0, 1, 0),
+        filevers=(1, 0, 2, 0),
+        prodvers=(1, 0, 2, 0),
         mask=0x3F,
         flags=0x0,
         OS=0x40004,
@@ -78,7 +78,7 @@ version_info = VSVersionInfo(
                             "FileDescription",
                             "CHARON.EXE - Windows driver updater",
                         ),
-                        StringStruct("FileVersion", "1.0.1.0"),
+                        StringStruct("FileVersion", "1.0.2.0"),
                         StringStruct("InternalName", "Charon"),
                         StringStruct(
                             "LegalCopyright",
@@ -86,7 +86,7 @@ version_info = VSVersionInfo(
                         ),
                         StringStruct("OriginalFilename", "Charon.exe"),
                         StringStruct("ProductName", "CHARON.EXE"),
-                        StringStruct("ProductVersion", "1.0.1"),
+                        StringStruct("ProductVersion", "1.0.2"),
                     ],
                 )
             ]
