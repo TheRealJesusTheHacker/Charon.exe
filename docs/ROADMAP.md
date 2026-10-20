@@ -226,12 +226,37 @@ complete.** The animated window is built:
 - **Pending: Windows on-hardware verification** — the window on a
   real display and the full pipeline against a real PC on aroura.
 
+## Portable edition — committed deliverable
+
+**Status: PACKAGING READY (2026-10-20) — the first portable ships
+with the next release.** The portable edition is no longer
+backlog; it is a committed deliverable with its build wired end
+to end:
+
+- `packaging/Charon.spec` — a PyInstaller one-folder build of the
+  window (the `charon` package plus its PySide6 and pywin32 COM
+  runtime in one folder: no install, no Python on the machine).
+- `packaging/launch_charon.py` — the frozen entry point: no
+  arguments opens the window; any argument routes to the same CLI
+  as `python -m charon`.
+- `packaging/requirements-ci.txt` — the release build's pinned
+  dependency list.
+- `packaging/portable/README-PORTABLE.txt` — ships inside the zip,
+  including the honest differences from running from source (the
+  ledger and restore points stay with the machine they describe).
+- `.github/workflows/build-release.yml` — on every published
+  release: tag-vs-version check, the full test suite, the portable
+  build, the lazy-import warn-file check, an offscreen launch
+  smoke test of the packaged exe, then `CharonPortable.zip` and
+  `SHA256SUMS.txt` attached to the release.
+
+The portable edition is Charon's seat in the Sentinel IT Toolkit
+USB, alongside NitroCore Portable and Argus Portable.
+
 ## Later / backlog
 
 - Single self-installing `Charon.exe` (the Argus v1.1.0 pattern: one file,
   one permission prompt, self-verifying setup) once the engine phases land.
-- Portable edition for the Sentinel IT Toolkit USB (with NitroCore
-  Portable and Argus Portable).
 - Driver backup/export (a "passenger manifest" the owner can keep).
 - Scheduled scan reminders ("the ferryman returns monthly").
 - Signed update-feed / vendor-catalog expansion beyond Windows Update,
