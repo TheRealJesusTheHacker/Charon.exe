@@ -1,0 +1,134 @@
+name: build-release
+
+# Builds Charon's portable edition when a release is published:
+#   * checks the release tag against charon.__version__ (a vX.Y.Z
+#     tag that disagrees with the code never ships)
+#   * runs the full test suite (GUI tests run offscreen)
+#   * builds the portable edition with PyInstaller — a one-folder
+#     build from packaging/Charon.spec (Charon.exe plus its
+#     runtime libraries in one folder; no install, no Python on
+#     the target machine)
+#   * greps the PyInstaller warn file for the lazy-import
+#     watchlist (the pywin32 COM stack Charon's Windows Update
+#     seams import inside functions, and PySide6) — a build that
+#     silently dropped either fails HERE, not on a user's machine
+#   * smoke-tests the staged portable exe (starts it offscreen;
+#     a GUI that dies on launch fails the run)
+#   * zips the portable folder as CharonPortable.zip, writes
+#     SHA256SUMS.txt covering it, and attaches both to the release
+#
+# workflow_dispatch runs the same pipeline as a dry run (tests,
+# build, smoke test, zip, checksums) but attaches nothing to any
+# release — it exists so the pipeline can be verified without
+# cutting a release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-portable:
+    runs-on: windows-latest
+    steps:
+      # Actions pinned to full commit SHAs (supply-chain hardening,
+      # the same pins the Argus release workflow uses; SHAs verified
+      # against the upstream repos with `git ls-remote` on
+      # 2026-10-19): a moved tag must never change what a release
+      # build runs.
+      - name: Check out the release tag (or the dispatched ref)
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - name: Check the release tag matches the code version
+        if: github.event_name == 'release'
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $init = Get-Content charon/__init__.py -Raw
+          if ($init -notmatch '__version__\s*=\s*"([^"]+)"') {
+            Write-Host "Could not read __version__ from charon/__init__.py."
+            exit 1
+          }
+          $code = $Matches[1]
+          if ("v$code" -ne $tag) {
+            Write-Host "Release tag '$tag' does not match charon.__version__ '$code' (expected tag 'v$code')."
+            exit 1
+          }
+          Write-Host "Release tag $tag matches charon.__version__ $code."
+
+      - name: Install dependencies
+        run: pip install -r packaging/requirements-ci.txt
+
+      - name: Run the test suite (GUI offscreen)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python -m pytest -q
+
+      - name: Build the portable edition (one-folder PyInstaller build)
+        run: pyinstaller packaging/Charon.spec --noconfirm
+
+      - name: Check the build for missing lazy imports (warn file)
+        run: |
+          $warnFiles = Get-ChildItem -Path build -Recurse -Filter "warn-*.txt"
+          if (-not $warnFiles) {
+            Write-Host "PyInstaller warn file not found under build - cannot verify the lazy-import watchlist."
+            exit 1
+          }
+          $watchlist = "win32com", "pythoncom", "pywintypes", "PySide6"
+          $failed = $false
+          foreach ($warn in $warnFiles) {
+            $hits = Select-String -Path $warn.FullName -Pattern ($watchlist -join "|")
+            if ($hits) {
+              Write-Host "PyInstaller could not find modules on the lazy-import watchlist (in $($warn.FullName)):"
+              $hits | ForEach-Object { Write-Host $_.Line }
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+          Write-Host "No watchlist modules missing from the build."
+
+      - name: Assemble the portable edition folder
+        run: |
+          New-Item -ItemType Directory -Force dist\CharonPortable | Out-Null
+          Copy-Item dist\Charon dist\CharonPortable\Charon -Recurse
+          Copy-Item packaging\portable\README-PORTABLE.txt dist\CharonPortable\
+
+      # Importing PySide6 in a test is not proof the packaged GUI
+      # can start: the Qt platform plugin loads only when a
+      # QApplication is created. Start the staged portable exe
+      # offscreen — a build whose window dies on launch exits
+      # before the wait is over and fails here; a healthy window
+      # is still running when the wait ends and is then closed.
+      - name: Smoke-test the portable exe (starts offscreen and stays up)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          $proc = Start-Process -FilePath "dist\CharonPortable\Charon\Charon.exe" -PassThru
+          Start-Sleep -Seconds 10
+          if ($proc.HasExited) {
+            Write-Host "Charon.exe exited on launch with code $($proc.ExitCode) - the packaged GUI did not start."
+            exit 1
+          }
+          Write-Host "Charon.exe is running - the packaged GUI started."
+          Stop-Process -Id $proc.Id -Force
+
+      - name: Zip the portable edition and write SHA256SUMS.txt
+        run: |
+          Compress-Archive -Path dist\CharonPortable\* -DestinationPath dist\CharonPortable.zip -Force
+          $hash = (Get-FileHash dist\CharonPortable.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  CharonPortable.zip" | Out-File -FilePath dist\SHA256SUMS.txt -Encoding ascii
+          Get-Content dist\SHA256SUMS.txt
+
+      - name: Attach the portable edition and checksums to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload ${{ github.ref_name }} dist/CharonPortable.zip dist/SHA256SUMS.txt --clobber --repo ${{ github.repository }}
