@@ -687,6 +687,64 @@ def test_pay_toll_backend_value_error_is_unpaid(tmp_path):
     assert toll.session_toll() is None
 
 
+def test_concurrent_ledger_writers_lose_nothing_under_stress(tmp_path):
+    """The 2026-10-20 kit hunt's re-probe: the release run for
+    v1.0.2 lost 1 of 40 appends on Windows (19 == 20) even with
+    the v1.0.1 seed-byte fix in place — the four-thread test
+    above only caught it intermittently. The mechanism is a
+    Windows locking rule the seed-byte fix never touched: byte
+    locks taken through one handle are released when the SAME
+    PROCESS closes any other handle to that file, so one thread
+    finishing could drop the lock another thread was holding,
+    and two writers read-modify-wrote the ledger together. This
+    heavier mix (8 threads, 200 appends) makes the loss show up
+    reliably on Windows when in-process writers are not
+    serialized before they reach the file lock."""
+    import threading
+
+    from charon.download import append_run_to_ledger as append_run
+
+    ledger = tmp_path / "ledger.json"
+    errors = []
+
+    def runs():
+        try:
+            for _ in range(25):
+                append_run(ledger, [], source="scan")
+        except Exception as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+
+    def tolls():
+        try:
+            for i in range(25):
+                now = datetime.now(timezone.utc)
+                marker = build_marker(now, token=<redacted>"{i:08x}")
+                record_toll(
+                    ledger,
+                    TollRecord(
+                        sequence_number=i,
+                        description=marker,
+                        marker=marker,
+                        created_at=now,
+                        verified_at=now,
+                    ),
+                )
+        except Exception as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=runs) for _ in range(4)
+    ] + [threading.Thread(target=tolls) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    data = load_ledger(ledger)
+    assert len(data["runs"]) == 100
+    assert len(data["tolls"]) == 100
+
+
 def test_concurrent_ledger_writers_lose_nothing(tmp_path):
     """Download runs and toll records share one ledger. Concurrent
     writers used to collide on one fixed temp name (crashes) and
