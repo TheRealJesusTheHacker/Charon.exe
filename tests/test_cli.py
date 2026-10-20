@@ -125,3 +125,36 @@ def test_not_windows_runner_refuses_cleanly():
     with pytest.raises(InventoryUnavailable) as excinfo:
         collect_inventory()
     assert "isn't running Windows" in excinfo.value.user_message
+
+
+
+# ----------------------------------------------------------------------
+# Bug hunt #2 regressions: CLI file errors are designed failures
+# ----------------------------------------------------------------------
+
+
+def test_scan_json_export_to_unwritable_path_is_designed(
+    monkeypatch, tmp_path, capsys
+):
+    from datetime import datetime
+
+    from charon.model import ScanReport
+
+    monkeypatch.setattr(
+        cli,
+        "run_scan",
+        lambda: ScanReport(generated_at=datetime(2026, 10, 19, 12, 0)),
+    )
+    # A directory as the --json target: write_text raises OSError.
+    code = cli.main(["scan", "--json", str(tmp_path)])
+    assert code == cli.EXIT_DESIGNED_FAILURE == 2
+    out = capsys.readouterr().out
+    assert "couldn't write the report file" in out
+    assert "Traceback" not in out
+
+
+def test_load_report_rejects_non_list_devices(tmp_path):
+    bad = tmp_path / "bad.json"
+    bad.write_text(json.dumps({"devices": 5}), encoding="utf-8")
+    with pytest.raises(InventoryUnavailable):
+        cli.load_report(bad)
