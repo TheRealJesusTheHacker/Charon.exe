@@ -47,7 +47,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import secrets
 import socket
@@ -59,7 +58,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Protocol
 
-from .download import ProgressEvent, default_ledger_path, load_ledger
+from .download import (
+    ProgressEvent,
+    _atomic_write_ledger,
+    _ledger_lock,
+    default_ledger_path,
+    load_ledger,
+)
 
 log = logging.getLogger("charon.toll")
 
@@ -348,8 +353,12 @@ def parse_probe_json(text: str) -> TollProbe:
     if not isinstance(data, dict):
         raise TollBackendError("probe returned an unexpected shape")
     protection = data.get("protection_enabled")
+    admin = data.get("is_admin")
     return TollProbe(
-        is_admin=bool(data.get("is_admin")),
+        # Fail closed, exactly like the protection leg below: only a
+        # real JSON boolean proves elevation. A string like "false"
+        # must never coerce to True and wave the admin check through.
+        is_admin=admin if isinstance(admin, bool) else False,
         protection_enabled=protection if isinstance(protection, bool) else None,
         system_drive=str(data.get("system_drive") or ""),
     )
@@ -387,8 +396,12 @@ def parse_restore_point_time(value) -> datetime | None:
         )
         micros = int((wmi.group(7) or "0").ljust(6, "0"))
         sign = 1 if wmi.group(8) == "+" else -1
-        offset = timezone(timedelta(minutes=sign * int(wmi.group(9))))
         try:
+            # The offset construction itself validates: an absurd
+            # offset (the regex admits up to 9999 minutes) raises
+            # ValueError here, and an undatable point must come back
+            # None — never as an exception that escapes the parser.
+            offset = timezone(timedelta(minutes=sign * int(wmi.group(9))))
             parsed = datetime(
                 year, month, day, hour, minute, second, micros, tzinfo=offset
             )
@@ -438,7 +451,10 @@ def parse_restore_points_json(text: str) -> list[RestorePointInfo]:
     for row in rows:
         try:
             sequence = int(row.get("SequenceNumber"))
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
+            # OverflowError: JSON can carry Infinity (``1e999``),
+            # and int(inf) raises it — a malformed row is skipped,
+            # never a crash that escapes the seam.
             continue
         rp_type = row.get("RestorePointType")
         points.append(
@@ -458,24 +474,30 @@ def parse_restore_points_json(text: str) -> list[RestorePointInfo]:
 
 
 def _write_ledger(path: Path, ledger: dict) -> None:
-    """Rewrite the shared ledger atomically (temp sibling + replace),
-    the same pattern the download ledger writes with."""
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(ledger, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    """Rewrite the shared ledger atomically, under the ledger lock —
+    the one writer the download ledger and the toll records share."""
+    with _ledger_lock(path):
+        _atomic_write_ledger(path, ledger)
 
 
 def record_toll(path: Path, record: TollRecord) -> None:
-    """Append a paid toll to the ledger's ``tolls`` list."""
-    ledger = load_ledger(path)
-    tolls = ledger.get("tolls")
-    if not isinstance(tolls, list):
-        tolls = []
-        ledger["tolls"] = tolls
-    tolls.append(record.to_dict())
-    _write_ledger(path, ledger)
+    """Append a paid toll to the ledger's ``tolls`` list.
+
+    The load → append → rewrite cycle runs under the ledger lock:
+    a download run landing at the same moment must neither erase
+    this toll nor be erased by it, and the shared temp-file name
+    that once made concurrent writers crash on each other's
+    replace is gone (unique temp names, in ``download.py``).
+    """
+    path = Path(path)
+    with _ledger_lock(path):
+        ledger = load_ledger(path)
+        tolls = ledger.get("tolls")
+        if not isinstance(tolls, list):
+            tolls = []
+            ledger["tolls"] = tolls
+        tolls.append(record.to_dict())
+        _atomic_write_ledger(path, ledger)
 
 
 def latest_toll(path: Path) -> TollRecord | None:
@@ -485,7 +507,9 @@ def latest_toll(path: Path) -> TollRecord | None:
         return None
     try:
         return TollRecord.from_dict(tolls[-1])
-    except (KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        # OverflowError: a hand-edited or corrupt record can carry a
+        # number JSON parses as Infinity; unreadable is unreadable.
         log.warning("latest toll record in %s is unreadable: %s", path, exc)
         return None
 
@@ -639,12 +663,18 @@ def pay_toll(
     )
     try:
         probe = backend.probe()
-    except TollBackendError as exc:
+    except (TollBackendError, ValueError, OverflowError) as exc:
+        # ValueError/OverflowError: a backend whose parser chokes on
+        # malformed OS output must still resolve to unpaid, never
+        # to a traceback — the ferry fails toward not moving.
+        detail = exc.detail if isinstance(exc, TollBackendError) else (
+            f"{type(exc).__name__}: {exc}"
+        )
         raise unpaid(
             TollUnpaid(
                 "Charon couldn't check this PC's restore-point "
                 "settings, so the toll can't be paid safely.",
-                detail=exc.detail,
+                detail=detail,
             )
         ) from exc
     if not probe.is_admin:
@@ -704,6 +734,20 @@ def pay_toll(
                 "failing, restart the PC and run Charon again.",
             )
         ) from exc
+    except ValueError as exc:
+        # The seam refuses an unsafe description with ValueError
+        # before anything runs (see the charset guard). That is a
+        # refused toll, not a crash: resolve it like every other
+        # way the toll can fail to be paid.
+        raise unpaid(
+            TollUnpaid(
+                "Charon couldn't create the restore point, so the "
+                "toll is not paid and the ferry doesn't move.",
+                detail=f"{type(exc).__name__}: {exc}",
+                next_step="Try again in a few minutes; if it keeps "
+                "failing, restart the PC and run Charon again.",
+            )
+        ) from exc
 
     emit(
         ProgressEvent(
@@ -717,15 +761,18 @@ def pay_toll(
     for attempt in range(attempts):
         try:
             points = backend.list_restore_points()
-        except TollBackendError as exc:
+        except (TollBackendError, ValueError, OverflowError) as exc:
             # Fail toward not moving the ferry: an unverifiable toll
             # is an unpaid toll.
+            detail = exc.detail if isinstance(exc, TollBackendError) else (
+                f"{type(exc).__name__}: {exc}"
+            )
             raise unpaid(
                 TollUnpaid(
                     "Charon couldn't read back this PC's restore "
                     "points to verify the toll, so it counts as "
                     "unpaid — the ferry doesn't move on a promise.",
-                    detail=exc.detail,
+                    detail=detail,
                 )
             ) from exc
         hit = _find_qualifying(points, marker, not_before)
@@ -801,9 +848,16 @@ def require_paid_toll(
     argument, this session's toll, or the ledger's latest toll. The
     candidate is then **re-verified against the PC itself**: a
     restore point with the same sequence number still carrying this
-    run's marker must still exist. A record whose point was deleted,
-    or a PC that can't be queried, fails the gate — proof on paper
-    is never enough on its own.
+    run's marker must still exist — and it must be the *same* point
+    the record describes, so its creation time must match the
+    record's (within the verification tolerance). Both legs that
+    proved payment in :func:`pay_toll` are re-checked here in the
+    form the record can still prove: the marker discriminates, the
+    timestamp binds the record to the enumerated point. A record
+    whose point was deleted — or swapped for another point that
+    merely shares a sequence number — or a PC that can't be
+    queried, fails the gate: proof on paper is never enough on its
+    own, and neither is half of it.
     """
     candidate = record or _session_toll
     if candidate is None:
@@ -816,22 +870,56 @@ def require_paid_toll(
             next_step="Run the toll step first; the ferry only "
             "crosses behind a verified restore point.",
         )
+    if not candidate.marker or not candidate.marker.strip():
+        # An empty marker is a substring of EVERY description, so a
+        # record without one would open the gate for any point that
+        # happens to share the sequence number. No marker, no proof.
+        raise TollUnpaid(
+            "The toll record on file carries no run marker, so it "
+            "can't be verified against this PC — the toll counts "
+            "as unpaid, and the ferry doesn't move.",
+            detail="candidate record has an empty marker",
+            next_step="Pay the toll again so a fresh restore point "
+            "backs this crossing.",
+        )
+    if candidate.created_at is None:
+        raise TollUnpaid(
+            "The toll record on file carries no creation time, so "
+            "it can't be verified against this PC — the toll counts "
+            "as unpaid, and the ferry doesn't move.",
+            detail="candidate record has no created_at",
+            next_step="Pay the toll again so a fresh restore point "
+            "backs this crossing.",
+        )
     if backend is None:
         backend = _default_backend()
     try:
         points = backend.list_restore_points()
-    except TollBackendError as exc:
+    except (TollBackendError, ValueError, OverflowError) as exc:
+        detail = exc.detail if isinstance(exc, TollBackendError) else (
+            f"{type(exc).__name__}: {exc}"
+        )
         raise TollUnpaid(
             "Charon couldn't verify the toll against this PC's "
             "restore points, so the crossing stays closed.",
-            detail=exc.detail,
+            detail=detail,
         ) from exc
+    record_created = candidate.created_at
+    if record_created.tzinfo is None:
+        record_created = record_created.replace(tzinfo=timezone.utc)
     for point in points:
-        if (
-            point.sequence_number == candidate.sequence_number
-            and candidate.marker in point.description
-        ):
-            return candidate
+        if point.sequence_number != candidate.sequence_number:
+            continue
+        if candidate.marker not in point.description:
+            continue
+        if point.created_at is None:
+            continue  # an undatable point can never prove a toll
+        point_created = point.created_at
+        if point_created.tzinfo is None:
+            point_created = point_created.replace(tzinfo=timezone.utc)
+        if abs(point_created - record_created) > _VERIFY_TOLERANCE:
+            continue  # same number, same words — a different point
+        return candidate
     raise TollUnpaid(
         "The restore point that paid this crossing's toll can't be "
         "found on this PC anymore — it may have been deleted. The "
