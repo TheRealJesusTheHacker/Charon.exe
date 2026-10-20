@@ -554,3 +554,186 @@ def test_toll_command_unpaid_is_designed(monkeypatch, tmp_path, capsys):
     assert "Wait a day, then try again." in out
     assert "secret technical detail" not in out  # detail goes to the log
     assert "Traceback" not in out
+
+
+# ----------------------------------------------------------------------
+# Bug hunt #2 regressions (Phases 2–3 audit)
+# ----------------------------------------------------------------------
+
+
+def test_parse_restore_point_time_absurd_wmi_offset_is_none():
+    """An out-of-range WMI UTC offset used to raise ValueError out of
+    the parser (the offset was built outside the guard) — an
+    undatable point is None, never a crash."""
+    assert parse_restore_point_time("20261019140509.000000+9999") is None
+    assert parse_restore_point_time("20261019140509.000000-9999") is None
+
+
+def test_parse_restore_points_json_infinite_sequence_is_skipped():
+    """JSON can carry Infinity; int(inf) raises OverflowError, which
+    used to escape the parser and crash verification."""
+    text = (
+        '[{"SequenceNumber": Infinity, "Description": "x",'
+        ' "CreationTime": "2026-10-19T14:05:09Z"},'
+        ' {"SequenceNumber": 9, "Description": "y",'
+        ' "CreationTime": "2026-10-19T14:05:09Z"}]'
+    )
+    points = parse_restore_points_json(text)
+    assert [p.sequence_number for p in points] == [9]
+
+
+def test_parse_probe_json_non_boolean_admin_fails_closed():
+    """bool("false") is True — a string admin flag used to wave the
+    elevation check through. Only a real boolean proves admin."""
+    assert parse_probe_json('{"is_admin": "false"}').is_admin is False
+    assert parse_probe_json('{"is_admin": true}').is_admin is True
+    assert parse_probe_json("{}").is_admin is False
+
+
+def test_latest_toll_tolerates_infinite_sequence(tmp_path):
+    ledger = tmp_path / "ledger.json"
+    ledger.write_text(
+        '{"format": 1, "runs": [], "tolls": [{"sequence_number": 1e999,'
+        ' "description": "d", "marker": "m",'
+        ' "created_at": "2026-10-19T14:05:09Z",'
+        ' "verified_at": "2026-10-19T14:05:09Z"}]}',
+        encoding="utf-8",
+    )
+    assert latest_toll(ledger) is None
+
+
+def test_gate_rejects_record_with_empty_marker(tmp_path):
+    """An empty marker is a substring of every description — a
+    record without one must never open the gate."""
+    backend = FakeRestoreBackend(
+        points=[
+            RestorePointInfo(
+                sequence_number=7,
+                description="some other point entirely",
+                created_at=datetime.now(timezone.utc),
+            )
+        ]
+    )
+    now = datetime.now(timezone.utc)
+    record = TollRecord(
+        sequence_number=7,
+        description="some other point entirely",
+        marker="",
+        created_at=now,
+        verified_at=now,
+    )
+    with pytest.raises(toll.TollUnpaid):
+        require_paid_toll(backend, record=record)
+
+
+def test_gate_rejects_point_stamped_at_a_different_time(tmp_path):
+    """Sequence + marker used to be the gate's whole check. A point
+    stamped at a different time than the record's is a different
+    point — the timestamp leg binds them."""
+    marker = build_marker(token="cafe1234")
+    point = RestorePointInfo(
+        sequence_number=7,
+        description=marker,
+        created_at=datetime(2020, 1, 1, tzinfo=timezone.utc),
+    )
+    backend = FakeRestoreBackend(points=[point])
+    now = datetime.now(timezone.utc)
+    record = TollRecord(
+        sequence_number=7,
+        description=marker,
+        marker=marker,
+        created_at=now,
+        verified_at=now,
+    )
+    with pytest.raises(toll.TollUnpaid):
+        require_paid_toll(backend, record=record)
+
+
+def test_gate_accepts_point_within_timestamp_tolerance():
+    """The mirror case: same sequence, same marker, creation time
+    within the verification tolerance → the gate opens."""
+    marker = build_marker(token="cafe1234")
+    now = datetime.now(timezone.utc)
+    point = RestorePointInfo(
+        sequence_number=7,
+        description=marker,
+        created_at=now - timedelta(seconds=1),
+    )
+    backend = FakeRestoreBackend(points=[point])
+    record = TollRecord(
+        sequence_number=7,
+        description=marker,
+        marker=marker,
+        created_at=now,
+        verified_at=now,
+    )
+    assert require_paid_toll(backend, record=record) == record
+
+
+def test_pay_toll_backend_value_error_is_unpaid(tmp_path):
+    """The seam's charset guard refuses with ValueError; that used
+    to escape pay_toll as a traceback instead of TollUnpaid."""
+
+    class GuardBackend(FakeRestoreBackend):
+        def create_restore_point(self, description):
+            raise ValueError(f"unsafe description: {description!r}")
+
+    with pytest.raises(toll.TollUnpaid):
+        pay_toll(
+            GuardBackend(),
+            ledger_path=tmp_path / "ledger.json",
+            marker="bad'; evil",
+        )
+    assert toll.session_toll() is None
+
+
+def test_concurrent_ledger_writers_lose_nothing(tmp_path):
+    """Download runs and toll records share one ledger. Concurrent
+    writers used to collide on one fixed temp name (crashes) and
+    erase each other's appends (lost updates)."""
+    import threading
+
+    from charon.download import append_run_to_ledger as append_run
+
+    ledger = tmp_path / "ledger.json"
+    errors = []
+
+    def runs():
+        try:
+            for _ in range(10):
+                append_run(ledger, [], source="scan")
+        except Exception as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+
+    def tolls():
+        try:
+            for i in range(10):
+                now = datetime.now(timezone.utc)
+                marker = build_marker(now, token=f"{i:08x}")
+                record_toll(
+                    ledger,
+                    TollRecord(
+                        sequence_number=i,
+                        description=marker,
+                        marker=marker,
+                        created_at=now,
+                        verified_at=now,
+                    ),
+                )
+        except Exception as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=runs),
+        threading.Thread(target=runs),
+        threading.Thread(target=tolls),
+        threading.Thread(target=tolls),
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    data = load_ledger(ledger)
+    assert len(data["runs"]) == 20
+    assert len(data["tolls"]) == 20
