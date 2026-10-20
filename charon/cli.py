@@ -15,8 +15,14 @@ Charon's download ledger. **Nothing is installed.**
 a System Restore point and **verifies** it exists — Windows
 silently skips a requested point when a recent one already exists,
 so a requested toll is not a paid toll. The verified toll is
-written to the same ledger, and the Phase 4 apply step will be
-required to present it at the gate before anything crosses.
+written to the same ledger.
+
+``python -m charon apply`` runs Phase 4 of the Crossing: it takes
+exactly what the download step staged, re-checks every update
+against a fresh Windows Update search, presents the toll at the
+gate — re-verified against the PC at that moment, never taken on
+trust — and installs one driver at a time, checking the device
+after each crossing. A restart is reported, never forced.
 
 Every failure a user can hit is a designed state with a
 plain-language message; technical detail goes to the log
@@ -34,6 +40,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import __version__
+from .apply import (
+    EVENT_APPLY_COMPLETED,
+    EVENT_APPLY_HELD,
+    EVENT_CROSSING_COMPLETED,
+    EVENT_CROSSING_STARTED,
+    EVENT_REBOOT_REQUIRED,
+    ApplyResult,
+    apply_staged,
+    summarize_apply_results,
+)
 from .download import (
     EVENT_BATCH_COMPLETED,
     EVENT_UPDATE_COMPLETED,
@@ -61,11 +77,13 @@ from .toll import (
     EVENT_TOLL_CHECKING,
     EVENT_TOLL_CREATING,
     EVENT_TOLL_VERIFYING,
+    TollRecord,
     TollUnpaid,
     pay_toll,
 )
 from .wua import WuaUnavailable, search_driver_updates
 from .wua_download import WuaDownloadUnavailable, download_updates
+from .wua_install import WuaInstallUnavailable
 
 log = logging.getLogger("charon.cli")
 
@@ -450,13 +468,127 @@ def _toll_command(args) -> int:
     return EXIT_OK
 
 
+# ----------------------------------------------------------------------
+# Phase 4 — the crossing (apply)
+# ----------------------------------------------------------------------
+
+
+def run_apply(
+    *,
+    toll_backend=None,
+    searcher=None,
+    installer=None,
+    verify=None,
+    emit=None,
+    ledger_path=None,
+) -> tuple[list[ApplyResult], TollRecord | None, Path]:
+    """Gate → revalidate → cross one at a time → ledger.
+
+    Thin composition over :func:`charon.apply.apply_staged`, shaped
+    like :func:`run_download` so the CLI and the Phase 5 UI drive
+    the same pipeline. Raises the designed failures
+    (``TollUnpaid``, ``WuaUnavailable``, ``WuaInstallUnavailable``);
+    per-driver outcomes come back as results.
+    """
+    results, toll_record = apply_staged(
+        ledger_path,
+        toll_backend=toll_backend,
+        searcher=searcher,
+        installer=installer,
+        verify=verify,
+        emit=emit,
+    )
+    path = Path(ledger_path) if ledger_path else default_ledger_path()
+    return results, toll_record, path
+
+
+def _render_apply_event(event: ProgressEvent) -> str | None:
+    if event.kind == EVENT_CROSSING_STARTED:
+        return f"  Crossing: {event.device_name} — {event.title}"
+    if event.kind == EVENT_CROSSING_COMPLETED:
+        if event.status in ("succeeded", "succeeded_with_errors"):
+            extra = (
+                " (across, with warnings from Windows Update)"
+                if event.status == "succeeded_with_errors"
+                else ""
+            )
+            return f"  Across: {event.device_name}{extra}"
+        return f"  Not across: {event.device_name} — {event.message}"
+    if event.kind in (EVENT_APPLY_HELD, EVENT_REBOOT_REQUIRED):
+        return f"  {event.message}" if event.message else None
+    if event.kind == EVENT_APPLY_COMPLETED:
+        return None  # the summary block speaks for the batch
+    return None
+
+
+def _apply_command(args) -> int:
+    print(
+        "CHARON.EXE — the crossing (Phase 4: staged updates, "
+        "applied behind the toll)"
+    )
+
+    def emit(event: ProgressEvent) -> None:
+        line = _render_apply_event(event)
+        if line:
+            print(line)
+
+    try:
+        results, toll_record, ledger = run_apply(
+            emit=emit, ledger_path=args.ledger
+        )
+    except TollUnpaid as exc:
+        log.error("apply refused at the gate: %s", exc.detail or exc.user_message)
+        print(exc.user_message)
+        if exc.next_step:
+            print(exc.next_step)
+        return EXIT_DESIGNED_FAILURE
+    except WuaUnavailable as exc:
+        log.error("apply revalidation unavailable: %s", exc.detail or exc)
+        print(
+            "Windows Update didn't answer when Charon checked the "
+            "staged drivers again, so nothing was installed. An "
+            "update is never applied from a stale check — try "
+            "again in a few minutes."
+        )
+        return EXIT_DESIGNED_FAILURE
+    except WuaInstallUnavailable as exc:
+        log.error("apply unavailable: %s", exc.detail or exc)
+        print(exc.user_message)
+        return EXIT_DESIGNED_FAILURE
+    except OSError as exc:
+        log.error("apply run records failed: %s", exc)
+        print(
+            "Charon couldn't finish writing its apply records, so "
+            "this run counts as not completed. Check the disk has "
+            "room and run Charon again — the toll gate will be "
+            "checked fresh, as always."
+        )
+        return EXIT_DESIGNED_FAILURE
+
+    if not results:
+        print(
+            "Nothing to apply: no downloaded drivers are waiting. "
+            "Run the download step first — the ferry only carries "
+            "what's aboard."
+        )
+        return EXIT_OK
+
+    print("")
+    print(summarize_apply_results(results, toll_record))
+    for result in results:
+        if not result.applied and result.detail:
+            print(f"Note: {result.entry.device_name} — {result.detail}")
+    print(f"Apply record written to the ledger: {ledger}")
+    return EXIT_OK
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="charon",
         description="CHARON.EXE — Sentinel Safeguard driver updater. "
-        "Scan, download (staged only — nothing is installed), and "
-        "the toll: a restore point, created and verified. Nobody "
-        "crosses without paying it.",
+        "Scan, download (staged only), the toll (a restore point, "
+        "created and verified), then apply — one driver at a time, "
+        "behind the gate. Nobody crosses without paying it.",
     )
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument(
@@ -506,6 +638,16 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="ledger location (default: Charon's app-state folder)",
     )
+    apply_parser = sub.add_parser(
+        "apply",
+        help="apply the downloaded drivers, one at a time, behind "
+        "the verified toll (the crossing)",
+    )
+    apply_parser.add_argument(
+        "--ledger",
+        metavar="PATH",
+        help="ledger location (default: Charon's app-state folder)",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(
@@ -519,6 +661,8 @@ def main(argv: list[str] | None = None) -> int:
         return _download_command(args)
     if args.command == "toll":
         return _toll_command(args)
+    if args.command == "apply":
+        return _apply_command(args)
     parser.print_help()
     return EXIT_OK
 
