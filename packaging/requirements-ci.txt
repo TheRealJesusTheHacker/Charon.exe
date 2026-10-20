@@ -1,0 +1,25 @@
+# CI dependency pins for the Windows portable release build.
+#
+# EXACT versions on purpose: the release pipeline must build with
+# the same libraries every time, never with whatever happens to be
+# newest on release day. These are the same pins the Argus release
+# pipeline uses (verified on PyPI 2026-10-19); bump deliberately,
+# in review, never by loosening a pin.
+#
+# Charon ships no pyproject or requirements file for end users
+# installing from source (the README lists PySide6 and pywin32 by
+# name); this file is the single source of truth for the RELEASE
+# build only. Every build-relevant package is pinned — not just
+# the headline names — because PyInstaller's own dependency tree
+# decides what the frozen folder contains and how its analysis
+# runs.
+PySide6==6.12.0
+pywin32==312
+pyinstaller==6.22.3
+pyinstaller-hooks-contrib==2026.8
+pefile==2024.8.26
+altgraph==0.17.5
+pywin32-ctypes==0.2.3
+packaging==25.0
+setuptools==80.10.2
+pytest==9.1.1
