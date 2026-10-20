@@ -718,7 +718,7 @@ def test_concurrent_ledger_writers_lose_nothing_under_stress(tmp_path):
         try:
             for i in range(25):
                 now = datetime.now(timezone.utc)
-                marker = build_marker(now, token=<redacted>"{i:08x}")
+                marker = f"stress probe toll {i}"
                 record_toll(
                     ledger,
                     TollRecord(
