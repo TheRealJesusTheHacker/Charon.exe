@@ -774,3 +774,128 @@ def test_stage_unknown_seam_status_counts_as_failed(tmp_path):
     run = append_run_to_ledger(tmp_path / "ledger.json", results)
     assert run["counts"]["planned"] == 1
     assert run["counts"]["failed"] == 1
+
+
+# ----------------------------------------------------------------------
+# Kit hunt 2026-10-20: the REAL WUA downloader shape
+#
+# Microsoft's documented IUpdateDownloader (wuapi.h): Download()
+# takes NO argument and RETURNS an IDownloadResult; the per-update
+# verdicts are read from THAT object via GetUpdateResult(index) —
+# the downloader itself has no GetUpdateResult method, and the
+# synchronous Download() has no progress-callback parameter at all
+# (progress callbacks belong to the separate BeginDownload job API).
+# The shared FakeComSession was built to the seam's mistaken shape
+# (GetUpdateResult on the downloader, Download(sink)), so the whole
+# suite stayed green while every real download's verdicts would be
+# read from an object that cannot answer. These fakes model the
+# documented API exactly, so the seam is now tested against the API
+# Windows actually exposes.
+# ----------------------------------------------------------------------
+
+
+class _RealEntry:
+    def __init__(self, code, hresult=0):
+        self.ResultCode = code
+        self.HResult = hresult
+
+
+class _RealDownloadResult:
+    """IDownloadResult: the object Download() returns."""
+
+    def __init__(self, codes):
+        self._codes = list(codes)
+
+    def GetUpdateResult(self, index):
+        return _RealEntry(self._codes[index])
+
+
+class _RealDownloader:
+    """IUpdateDownloader as documented: no GetUpdateResult here."""
+
+    def __init__(self, codes):
+        self.Updates = None
+        self._codes = list(codes)
+        self.download_calls = 0
+
+    def Download(self):  # no parameters — the real signature
+        self.download_calls += 1
+        return _RealDownloadResult(self._codes)
+
+    def __getattr__(self, name):
+        # A real COM downloader answers an unknown member with an
+        # error, never with a verdict.
+        raise AttributeError(name)
+
+
+class _RealSession:
+    def __init__(self, codes):
+        self._codes = list(codes)
+        self.downloader = None
+
+    def CreateUpdateCollection(self):
+        from conftest import _FakeCollection
+
+        return _FakeCollection()
+
+    def CreateUpdateDownloader(self):
+        self.downloader = _RealDownloader(self._codes)
+        return self.downloader
+
+    def __getattr__(self, name):
+        raise AssertionError(f"unexpected session member requested: {name}")
+
+
+def test_download_verdicts_come_from_the_download_result_object():
+    """A successful real-shaped download must be reported staged."""
+    session = _RealSession([2, 2])
+    results = ComUpdateDownloader(session).download(
+        [_wifi_com(), _touch_com()], emit=lambda event: None
+    )
+    assert [r.status for r in results] == ["succeeded", "succeeded"]
+    assert [r.result_code for r in results] == [2, 2]
+    assert session.downloader.download_calls == 1
+
+
+def test_download_verdicts_real_shape_per_update_failure():
+    session = _RealSession([2, 4])
+    results = ComUpdateDownloader(session).download(
+        [_wifi_com(), _touch_com()]
+    )
+    by_status = [r.status for r in results]
+    assert by_status == ["succeeded", "failed"]
+
+
+def test_ledger_lock_contention_exhaustion_is_not_silent(
+    tmp_path, monkeypatch, caplog
+):
+    """Kit hunt: on Windows, when the ledger lock cannot be taken in
+    the retry budget, the writer used to fall through and write
+    UNLOCKED with nothing in the log — the exact silent-race shape
+    v1.0.1 fixed for the seed byte. Writing unlocked may stay (a lost
+    race costs history, never safety), but it must be said out loud.
+    The Windows branch is simulated: a fake msvcrt whose locking
+    always refuses, on a platform patched to look like Windows."""
+    import logging
+    import sys
+    import types
+
+    from charon import download as download_mod
+
+    fake_msvcrt = types.SimpleNamespace(
+        LK_NBLCK=1,
+        LK_UNLCK=2,
+        locking=lambda fd, mode, nbytes: (_ for _ in ()).throw(
+            OSError("locked by another writer")
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "msvcrt", fake_msvcrt)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(download_mod.time, "sleep", lambda seconds: None)
+    path = tmp_path / "ledger.json"
+    with caplog.at_level(logging.WARNING, logger="charon.download"):
+        with download_mod._ledger_lock(path):
+            pass
+    assert any(
+        "unlocked" in record.getMessage() for record in caplog.records
+    ), "lock contention exhaustion proceeded unlocked in silence"

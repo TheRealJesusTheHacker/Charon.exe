@@ -553,3 +553,61 @@ def windows_pair(qapp):
         win.close()
         win.deleteLater()
     qapp.processEvents()
+
+
+# ----------------------------------------------------------------------
+# Kit hunt 2026-10-20: worker-thread COM + close-while-busy
+# ----------------------------------------------------------------------
+
+
+def test_close_while_engine_is_working_is_refused(window, monkeypatch, qapp):
+    """Closing the window mid-step must not destroy a running worker
+    thread (Qt aborts the process for that). The close is refused in
+    plain language until the step finishes."""
+    release = threading.Event()
+
+    def blocking_scan():
+        release.wait(10)
+        return make_report()
+
+    monkeypatch.setattr(gui, "engine_scan", blocking_scan)
+    window.start_scan()
+    spin(qapp, 0.3)
+    assert window._busy()
+    accepted = window.close()
+    assert accepted is False, "window closed while its worker was running"
+    assert window.isVisible()
+    assert "finish" in window.status_line.text().lower()
+    release.set()
+    assert settle(qapp, window)
+
+
+@pytest.mark.skipif(
+    not os.sys.platform.startswith("win"),
+    reason="COM apartment behaviour is Windows-only",
+)
+def test_engine_worker_can_use_com_on_windows(window, qapp):
+    """The engine runs on the worker thread, and every thread that
+    touches COM must initialize its own apartment first — pythoncom
+    initializes only the thread that imports it (the main thread).
+    Without that, creating the Windows Update session on the worker
+    raises 'CoInitialize has not been called' and every GUI scan
+    reports that Windows Update didn't answer."""
+    outcome = {}
+
+    def engine(emit):
+        import win32com.client
+
+        session = win32com.client.Dispatch("Microsoft.Update.Session")
+        return session is not None
+
+    worker = gui.EngineWorker(lambda emit: engine(emit))
+    worker.succeeded.connect(lambda result: outcome.update(ok=result))
+    worker.failed.connect(lambda exc: outcome.update(error=exc))
+    worker.start()
+    assert worker.wait(15000), "worker thread did not finish"
+    qapp.processEvents()
+    assert outcome.get("error") is None, (
+        f"engine failed on the worker thread: {outcome.get('error')!r}"
+    )
+    assert outcome.get("ok") is True
