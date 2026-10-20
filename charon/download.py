@@ -533,6 +533,14 @@ def _ledger_lock(path: Path):
 
                         if os.fstat(fd).st_size == 0:
                             os.write(fd, b"\0")
+                        # msvcrt.locking locks from the fd's current
+                        # offset, not from 0: the seed write above
+                        # leaves a fresh fd at offset 1 while every
+                        # later fd starts at 0, so without rewinding
+                        # the first writer locks byte 1 and the rest
+                        # lock byte 0 — two writers, no contention.
+                        # Every writer must contend for byte 0.
+                        os.lseek(fd, 0, os.SEEK_SET)
                         for _attempt in range(200):
                             try:
                                 msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
@@ -558,6 +566,9 @@ def _ledger_lock(path: Path):
                     if sys.platform.startswith("win"):
                         import msvcrt
 
+                        # Unlock the same byte that was locked:
+                        # locking/unlocking both address byte 0.
+                        os.lseek(fd, 0, os.SEEK_SET)
                         msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
                     else:
                         import fcntl
