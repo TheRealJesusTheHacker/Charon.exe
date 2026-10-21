@@ -2,7 +2,7 @@
 
 **Sentinel Safeguard LLC — the Windows driver updater that pays the toll first.**
 
-[![Version](https://img.shields.io/badge/version-v1.0.3-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.3)
+[![Version](https://img.shields.io/badge/version-v1.0.4-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.4)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white)](https://github.com/TheRealJesusTheHacker/Charon.exe)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![UI](https://img.shields.io/badge/UI-PySide6-41cd52?style=flat-square)](https://doc.qt.io/qtforpython-6/)
@@ -175,7 +175,7 @@ The workflow is fixed in the code, not suggested by it:
 ## Installation
 
 **The portable edition has shipped — in
-[v1.0.3](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.3).**
+[v1.0.4](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.4).**
 Download `CharonPortable.zip` from that release (its
 `SHA256SUMS.txt` is attached alongside it), unzip it anywhere —
 a folder on the PC or the Sentinel IT Toolkit USB — open the
@@ -261,7 +261,7 @@ python -m charon download          # stage outdated drivers (installs nothing)
 python -m charon toll              # pay the toll: create + verify a restore point
 python -m charon apply             # the crossing: install the staged drivers
 python -m charon gui               # the window: the whole crossing, guided
-python -m charon --version         # 1.0.3
+python -m charon --version         # 1.0.4
 ```
 
 | Command | Options | Notes |
@@ -456,6 +456,18 @@ pin them against the live API on the runner. The same hunt fixed the window clos
 (it now refuses, in plain language, until the step finishes) and
 made the ledger lock's unlocked fallbacks log a warning instead
 of proceeding in silence. See [CHANGELOG.md](CHANGELOG.md).
+
+**v1.0.4 — the toll, re-proved at every crossing (2026-10-21).**
+Fleet sweep #3's patch: the gate already ran fresh inside the
+apply; now the toll is re-verified against the live PC
+immediately before *each* install, so a restore point pruned
+or replaced mid-crossing (Windows itself prunes the oldest
+points under disk pressure) stops the line instead of being
+found missing afterwards. Smaller honesties alongside: the
+post-crossing device check judges the device that crossed,
+download events carry the ledger's normalised verdicts, model
+matching needs whole words, and finished window workers drop
+their callables. See [CHANGELOG.md](CHANGELOG.md).
 
 **v1.0.3 — Charon's own colors (2026-10-20).** The window now
 wears the Styx palette — charcoal-slate, river aqua, obol gold —

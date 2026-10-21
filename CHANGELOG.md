@@ -1,5 +1,51 @@
 # Changelog — CHARON.EXE
 
+## v1.0.4 — 2026-10-21
+
+Fleet sweep #3: a full bug, function, and security hunt over
+the whole tree, with fixes. One change strengthens the toll
+itself; the rest are smaller honesties. The crossing's order —
+Scan → Download → Restore point → Apply — is unchanged, and
+driver sourcing is still the Windows Update Agent API only.
+
+- **The toll is now re-proved before every single install.**
+  The gate already ran fresh inside the apply, moments before
+  the first install. But a crossing can take minutes per
+  driver, and a restore point can vanish inside that window —
+  Windows itself prunes the oldest points when disk space runs
+  short. The apply now re-verifies the toll against the live
+  PC immediately before each install; if the point can no
+  longer be confirmed, that driver and everything behind it
+  are recorded as held back, and nothing more is installed on
+  a way back that cannot be proved. Two new tests drive the
+  point vanishing mid-crossing and in the breath between the
+  gate and the first install: zero further installs, both
+  verdicts in the ledger.
+- **The post-crossing device check judges the right device.**
+  With two devices sharing a name and no device ID to tell
+  them apart, the check used to run on to the *last* namesake
+  and could judge a crossing by a different device's version.
+  An ID match anywhere in the list now wins, and the name
+  fallback takes the first match.
+- **Download events speak the ledger's words.** A download
+  result in a vocabulary Charon doesn't know is counted as
+  failed everywhere — the completion event now carries that
+  same normalised verdict, instead of repeating the seam's raw
+  word to screens while the ledger said "failed".
+- **Model matching needs whole words.** "net" no longer
+  matches inside "network", nor "audio" inside "audiophile":
+  model containment counts only at word boundaries, so one
+  device is not offered another's driver on a shared fragment.
+- **A finished window worker drops its callable.** The worker
+  stays a child of the window after its step; it no longer
+  keeps the step's callable (and whatever it closed over,
+  including live Windows Update objects) alive with it.
+
+Suite: 234 passed, 2 skipped (offscreen, Qt present) — the
+229 of v1.0.3 plus five new pins. Still unproven on real
+hardware, exactly as before: the whole crossing on a real
+Windows PC remains the owner's verification list, unchanged.
+
 ## v1.0.3 — 2026-10-20
 
 Charon gets its own face. Every tool in the medic kit now wears
