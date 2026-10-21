@@ -41,7 +41,7 @@ WHAT'S DIFFERENT FROM RUNNING FROM SOURCE (honest list)
   from source. Charon never downloads drivers from third-party
   driver sites.
 - The command line is still there: run Charon.exe with a verb
-  (scan, download, toll, apply, gui) from a terminal in this
+  (scan, download, toll, apply, manifest, gui) from a terminal in this
   folder and it behaves as it does from source.
 
 Charon never crosses without the toll. Nobody crosses without

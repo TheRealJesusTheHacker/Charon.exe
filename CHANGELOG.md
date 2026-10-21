@@ -1,5 +1,52 @@
 # Changelog — CHARON.EXE
 
+## v1.0.5 — 2026-10-21
+
+Phase 6: the passenger manifest (roadmap item B-5, built on the
+owner's call) — plus the two backlog decisions recorded in the
+roadmap the same day. The crossing's order — Scan → Download →
+Restore point → Apply — is unchanged, the toll is untouched
+(including v1.0.4's re-proof before every install), and driver
+sourcing is still the Windows Update Agent API only.
+
+- **Driver backup/export: the keepable passenger manifest.**
+  `python -m charon manifest --out <file>` writes the cargo
+  record of the crossing: every driver the scan found, exactly
+  as the inventory reported it (the manifest reuses the scan
+  report's own serialization — it may not paraphrase the cargo),
+  plus, when Charon's ledger has them, the download records, the
+  tolls paid, and the apply records of what crossed. JSON by
+  default; `--format text` writes the readable document. The
+  window's manifest page gains a **Save passenger manifest**
+  button that writes the same export to the owner's Documents
+  folder. Counts are computed from the rows the manifest
+  carries — never supplied by a caller.
+- **Honesty, pinned by test.** A scan that could not hear from
+  every source produces a manifest marked not complete, with
+  the scan's warnings carried verbatim; an unreadable ledger
+  flags the crossing record the same way. The write is atomic:
+  a failed export is a designed failure (exit 2, plain
+  language), leaves no partial file at the destination, and
+  never touches a good manifest already saved there.
+- **Backlog decisions, recorded in `docs/ROADMAP.md`.**
+  Single self-installing `Charon.exe` (B-4): CLOSED 2026-10-21
+  — portable-only is the decided form. Scheduled scan
+  reminders (B-6): CLOSED 2026-10-21 — drivers do not expire
+  monthly and Windows Update already reminds.
+- **Packaging version resource caught up.** The portable
+  spec's Windows version info had lagged at 1.0.3 through the
+  v1.0.4 release; it now reads 1.0.5, matching
+  `charon.__version__` as its comment promises.
+
+Suite: 251 passed, 2 skipped (offscreen, Qt present) — the 234
+of v1.0.4 plus 17 new manifest pins (accuracy against the real
+scan path over the fake seams, the crossing record, completeness
+marking, atomic-export failures, the CLI, and the window's save
+button end to end). Still unproven on real hardware, exactly as
+before: the whole crossing — and now a manifest exported from a
+real scan — on a real Windows PC remains the owner's
+verification list, unchanged.
+
 ## v1.0.4 — 2026-10-21
 
 Fleet sweep #3: a full bug, function, and security hunt over

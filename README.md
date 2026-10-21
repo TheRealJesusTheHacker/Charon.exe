@@ -2,7 +2,7 @@
 
 **Sentinel Safeguard LLC — the Windows driver updater that pays the toll first.**
 
-[![Version](https://img.shields.io/badge/version-v1.0.4-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.4)
+[![Version](https://img.shields.io/badge/version-v1.0.5-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.5)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white)](https://github.com/TheRealJesusTheHacker/Charon.exe)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![UI](https://img.shields.io/badge/UI-PySide6-41cd52?style=flat-square)](https://doc.qt.io/qtforpython-6/)
@@ -59,7 +59,7 @@ The workflow is fixed in the code, not suggested by it:
 | 3. **The Toll** | Create a System Restore point for this run and verify — by enumeration — that it actually exists | Be skipped, faked, or taken on trust |
 | 4. **Apply** | Re-verify the toll at the gate, then install the staged drivers one at a time, checking each device after its crossing | Bulk-blast drivers, force a restart, or cross without the gate |
 
-## Features — the five phases, all built
+## Features — the five phases, all built, plus the manifest
 
 ### Phase 1 — Driver inventory & scan engine
 
@@ -172,10 +172,27 @@ The workflow is fixed in the code, not suggested by it:
   pairing pinned at ≥ 4.5:1 contrast by test, and no purple
   anywhere in the palette — also pinned by test.
 
+### Phase 6 — The passenger manifest (a record to keep)
+
+- The toll protects the crossing; the manifest is the cargo
+  record of what was carried. One exportable file the owner can
+  keep: every driver the scan found, exactly as the inventory
+  reported it, plus — when Charon's ledger has them — the
+  download records, the tolls paid, and the apply records.
+- `python -m charon manifest --out <file>` writes it as JSON;
+  `--format text` writes the readable document. The window's
+  manifest page carries the same export as its **Save passenger
+  manifest** button, saved to the owner's Documents folder.
+- The manifest may not paraphrase the cargo: its driver rows are
+  the scan report's own serialization, and its counts are
+  computed from the rows it carries. A scan that could not hear
+  from every source yields a manifest marked **not complete**;
+  a failed export leaves no partial file behind.
+
 ## Installation
 
-**The portable edition has shipped — in
-[v1.0.4](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.4).**
+**The portable edition has shipped — the current release is
+[v1.0.5](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.5).**
 Download `CharonPortable.zip` from that release (its
 `SHA256SUMS.txt` is attached alongside it), unzip it anywhere —
 a folder on the PC or the Sentinel IT Toolkit USB — open the
@@ -188,8 +205,9 @@ workflow (`.github/workflows/build-release.yml`) that — on
 every published release — runs the full test suite, builds the
 folder, smoke-tests the packaged window, and attaches
 `CharonPortable.zip` and `SHA256SUMS.txt` to the release.
-(A single self-installing `Charon.exe` stays on the roadmap's
-backlog; see [Status & roadmap](#status--roadmap).)
+(A single self-installing `Charon.exe` was considered and
+closed on 2026-10-21 — portable-only is the decided form; see
+[Status & roadmap](#status--roadmap).)
 
 Running from source — the other way to run Charon. What you need:
 
@@ -234,7 +252,10 @@ One window, one journey:
    its status. Drivers with updates are checked for download;
    uncheck any driver to leave it behind, then *Download selected
    drivers*. If everything is up to date, the window says exactly
-   that — there's nothing for the ferry to carry today.
+   that — there's nothing for the ferry to carry today. *Save
+   passenger manifest* on this page writes the keepable record
+   of the scan (and of any crossings in the ledger) to the
+   Documents folder.
 4. **Downloading.** Per-driver progress, animated from the real
    download events. Nothing is installed in this step.
 5. **The toll.** *Pay the toll* creates this visit's restore point
@@ -260,8 +281,9 @@ python -m charon scan --json PATH  # also write the full report as JSON
 python -m charon download          # stage outdated drivers (installs nothing)
 python -m charon toll              # pay the toll: create + verify a restore point
 python -m charon apply             # the crossing: install the staged drivers
+python -m charon manifest --out manifest.json  # the keepable record
 python -m charon gui               # the window: the whole crossing, guided
-python -m charon --version         # 1.0.4
+python -m charon --version         # 1.0.5
 ```
 
 | Command | Options | Notes |
@@ -270,6 +292,7 @@ python -m charon --version         # 1.0.4
 | `download` | `--from-report PATH`, `--only DEVICE` (repeatable; by device ID or name), `--ledger PATH` | Fresh scan in-session unless `--from-report` is given; the plan is still re-checked against a fresh search either way |
 | `toll` | `--ledger PATH` | Creates and verifies the restore point standalone and prints the receipt; applies nothing |
 | `apply` | `--ledger PATH` | Takes exactly what `download` staged, re-validates, presents the toll at the gate, then crosses one driver at a time |
+| `manifest` | `--out PATH`, `--format json\|text`, `--from-report PATH`, `--ledger PATH` | Writes the passenger manifest — every scanned driver plus the ledger's crossing record — to a file the owner can keep; changes nothing. Without `--out` it says where the file would go, in plain language, and writes nothing |
 | `gui` | — | Opens the window described above |
 
 Global flags come before the command: `--version`, and `--debug`
@@ -286,6 +309,7 @@ python -m charon scan --json scan.json
 python -m charon download --from-report scan.json
 python -m charon toll
 python -m charon apply
+python -m charon manifest --out passenger-manifest.json
 ```
 
 Download stages updates into the Windows Update cache and applies
@@ -314,6 +338,7 @@ and proves the confinement holds.
 | `charon/download.py` | Pure logic: the download plan, fresh-search revalidation, progress events, and the ledger |
 | `charon/apply.py` | Pure logic: the crossing — ledger staged set, admin check, fresh revalidation, the fresh gate, one-at-a-time installs, device checks, apply records |
 | `charon/model.py` / `charon/cli.py` | The report model and the command line (table or JSON), with designed plain-language failure states |
+| `charon/manifest.py` | Pure logic plus the one owner-asked file write: the keepable passenger manifest — the scan's own rows plus the ledger's crossing record, counts computed from the rows carried, completeness marked honestly, written atomically |
 | `charon/gui.py` / `charon/hud.py` / `charon/theme.py` | The window, the animated HUD widgets (scan sweep, journey, toll ticket, driver rows), and Charon's Styx palette/stylesheet — the window owns no capability of its own |
 
 ### The ledger
@@ -399,17 +424,19 @@ python -m pytest            # the full suite
 python -m pytest --collect-only -q
 ```
 
-The suite stands at **231 tests, verified by collection**, and runs
+The suite stands at **253 tests, verified by collection**
+(251 passed, 2 skipped in the v1.0.5 run), and runs
 green on Linux — because it is built to: recorded fixtures
 (`tests/fixtures/` — CIM driver JSON, `pnputil` output, Windows
 Update offers) and fake/recorded seams stand in for Windows, and the
 GUI tests run headlessly under PySide6's offscreen platform (the GUI
 test module skips itself where PySide6 isn't installed, so the
 engine suite stays green on a Qt-less machine —
-`pytest --collect-only` reports 200 in that case). Coverage spans
+`pytest --collect-only` reports 219 in that case). Coverage spans
 the inventory and matching logic, download staging and the ledger,
 the toll and its skip trap, the apply engine and the stop-the-line
-rule, the CLI, the safety invariants, and the window end to end —
+rule, the passenger manifest export, the CLI, the safety
+invariants, and the window end to end —
 including the contrast and no-purple palette pins.
 
 That is testing by design and by fixture. It is **not** the same
@@ -457,6 +484,18 @@ pin them against the live API on the runner. The same hunt fixed the window clos
 made the ledger lock's unlocked fallbacks log a warning instead
 of proceeding in silence. See [CHANGELOG.md](CHANGELOG.md).
 
+**v1.0.5 — the passenger manifest (2026-10-21).** Phase 6
+(v1.0.5): driver backup/export is built — the keepable passenger
+manifest described above, in the CLI and in the window, with its
+completeness marked honestly and its write atomic. Two backlog
+items were decided the same day and are recorded in the
+roadmap: a single self-installing `Charon.exe` is CLOSED
+(portable-only is the decided form), and scheduled scan
+reminders are CLOSED (drivers do not expire monthly, and
+Windows Update already reminds). The toll, the gate, and the
+Windows Update-only sourcing are untouched. See
+[CHANGELOG.md](CHANGELOG.md).
+
 **v1.0.4 — the toll, re-proved at every crossing (2026-10-21).**
 Fleet sweep #3's patch: the gate already ran fresh inside the
 apply; now the toll is re-verified against the live PC
@@ -494,12 +533,14 @@ should be read as "proven on real Windows machines."
 
 What comes after that is only what the roadmap's backlog lists:
 
-- A single self-installing `Charon.exe` (one file, one permission
-  prompt, self-verifying setup).
-- Driver backup/export — a passenger manifest the owner can keep.
-- Scheduled scan reminders ("the ferryman returns monthly").
 - A signed update-feed / vendor-catalog expansion beyond Windows
   Update — only if it can be done with verified provenance.
+
+Decided and closed, for the record: driver backup/export is
+built (v1.0.5, above); a single self-installing `Charon.exe`
+is closed — portable-only is the decided form; scheduled scan
+reminders are closed — a reminder surface is scope in search
+of a need.
 
 Standing rules, from the roadmap: audit everything (build → bug
 hunt → fix → re-audit the fixes, before any release); functionality
