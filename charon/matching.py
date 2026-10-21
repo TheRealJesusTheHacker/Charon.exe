@@ -49,7 +49,14 @@ def _models_match(device_name: str, update_model: str) -> bool:
     a, b = _model_key(device_name), _model_key(update_model)
     if not a or not b:
         return False
-    return a == b or a in b or b in a
+    if a == b:
+        return True
+    # Containment counts only at word boundaries: "net" must not
+    # match inside "network", nor "audio" inside "audiophile". A
+    # shared fragment of a word is not a shared model — keys are
+    # space-separated words, so padding both sides makes the
+    # boundary test exact.
+    return f" {a} " in f" {b} " or f" {b} " in f" {a} "
 
 
 def _best(candidates: list[UpdateCandidate]) -> UpdateCandidate:

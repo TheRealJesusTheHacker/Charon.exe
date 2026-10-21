@@ -678,3 +678,22 @@ def test_real_session_shape_and_update_collection_coclass():
         assert int(collection.Count) == 0
     finally:
         pythoncom.CoUninitialize()
+
+
+def test_engine_worker_drops_its_callable_after_running(qapp):
+    """Sweep #3: a finished worker must not keep its callable —
+    and whatever the callable closed over — alive. The worker
+    stays a child of the window after its step; the closure must
+    not stay with it."""
+    seen = {}
+
+    def fn(emit):
+        return 41
+
+    worker = gui.EngineWorker(fn)
+    worker.succeeded.connect(lambda result: seen.update(result=result))
+    worker.start()
+    assert worker.wait(10000)
+    qapp.processEvents()
+    assert seen.get("result") == 41
+    assert worker._fn is None

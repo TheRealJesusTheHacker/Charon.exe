@@ -118,8 +118,14 @@ class EngineWorker(QThread):
         self._fn = fn
 
     def run(self) -> None:  # noqa: D102 — QThread's entry point
+        # Take the callable, then drop the worker's own reference
+        # to it before running: a finished worker stays a child of
+        # the window, and whatever its callable closed over (a
+        # scan's report, with the updates' live objects) must not
+        # be kept alive by the worker for the window's whole life.
+        fn, self._fn = self._fn, None
         try:
-            result = self._fn(self.event_emitted.emit)
+            result = fn(self.event_emitted.emit)
         except Exception as exc:  # designed failures included, by design
             log.warning("engine step failed: %s", exc, exc_info=True)
             self.failed.emit(exc)

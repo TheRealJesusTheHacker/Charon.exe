@@ -780,9 +780,17 @@ def test_stage_unknown_seam_status_counts_as_failed(tmp_path):
             )
         ]
 
-    results = stage_plan(resolved, weird_fetch)
+    events = []
+    results = stage_plan(resolved, weird_fetch, emit=events.append)
     assert results[0].status == "failed"
     assert "unrecognized result" in results[0].detail
+    # Sweep #3: the completion EVENT carries the same normalised
+    # verdict as the result — never the seam's raw word, which a
+    # screen would otherwise show for a status counted failed.
+    completed = [e for e in events if e.kind == EVENT_UPDATE_COMPLETED]
+    assert len(completed) == 1
+    assert completed[0].status == "failed"
+    assert "unrecognized result" in (completed[0].message or "")
     summary = summarize_results(results)
     assert "the Wi-Fi driver failed" in summary
     run = append_run_to_ledger(tmp_path / "ledger.json", results)

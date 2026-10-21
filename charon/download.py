@@ -350,8 +350,12 @@ def stage_plan(
                     kind=EVENT_UPDATE_COMPLETED,
                     device_name=item.entry.device_name,
                     title=item.entry.update.title,
-                    status=outcome.status,
-                    message=outcome.detail,
+                    # The normalised verdict, the same words the
+                    # result and the ledger carry — never the seam's
+                    # raw vocabulary, which screens would otherwise
+                    # show for a status Charon itself counts failed.
+                    status=status,
+                    message=detail,
                 )
             )
 

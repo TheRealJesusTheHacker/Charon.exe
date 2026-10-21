@@ -27,13 +27,21 @@ The order is enforced here, by construction, not by politeness:
    design answer to the gate→apply gap the Phase 3 audit recorded:
    the check and the crossing are one breath apart, and the gate
    runs inside it.
-5. **One crossing at a time.** Each update installs alone; after
-   each, the device is checked (still reporting in? carrying the
-   new version? no longer offered as not-installed?). A driver
-   whose install fails — or whose device doesn't come up healthy —
-   **stops the line**: the remaining drivers are recorded as held
-   back, not attempted. The way back (the toll's restore point)
-   is named in the summary.
+5. **One crossing at a time — and the gate is re-proved before
+   each one.** Each update installs alone, and immediately before
+   each install the toll is verified again against the live PC:
+   a crossing can take minutes per driver, and a restore point
+   pruned or replaced inside that window (Windows itself prunes
+   the oldest points when disk space runs short) closes the
+   crossing from that driver on — it and everything behind it
+   are recorded held back, never installed on a way back that
+   can no longer be proved. After each install, the device is
+   checked (still reporting in? carrying the new version? no
+   longer offered as not-installed?). A driver whose install
+   fails — or whose device doesn't come up healthy — **stops
+   the line**: the remaining drivers are recorded as held back,
+   not attempted. The way back (the toll's restore point) is
+   named in the summary.
 
 Further laws of the crossing:
 
@@ -313,8 +321,16 @@ def _default_verify(searcher, runner) -> VerifyFn:
             ):
                 device = driver
                 break
-            if driver.device_name == first.device_name:
-                device = driver
+        if device is None:
+            # No device answered to its ID: fall back to the name,
+            # first match wins. Two devices can share a name; the
+            # first is the deterministic pick, and letting the
+            # scan run on to the LAST namesake would silently
+            # judge this crossing by a different device's version.
+            for driver in drivers:
+                if driver.device_name == first.device_name:
+                    device = driver
+                    break
         if device is None:
             return (
                 False,
@@ -519,6 +535,51 @@ def apply_staged(
                         "there is nothing staged to install. Run "
                         "the download step again, then cross."
                     ),
+                )
+                continue
+
+            # THE GATE, AGAIN — the toll is re-proved before every
+            # single crossing, not only once when the run began. A
+            # crossing can take minutes per driver, and a restore
+            # point can vanish inside that window: Windows itself
+            # prunes the oldest points when disk space runs short,
+            # and a point deleted or replaced after the gate first
+            # opened must close the crossing from here on, not
+            # after the fact. If the point can no longer be proved,
+            # the line stops: this driver and everything behind it
+            # are held, and what already crossed keeps its record.
+            try:
+                require_paid_toll(
+                    backend, ledger_path=path, record=toll_record
+                )
+            except TollUnpaid:
+                record_group(
+                    entries,
+                    RESULT_SKIPPED,
+                    detail=(
+                        "Held back: before installing this driver, "
+                        "Charon checked the toll again, and the "
+                        "restore point could no longer be confirmed "
+                        "on this PC — it may have been removed or "
+                        "replaced since the crossing began. Nothing "
+                        "more was installed. Pay the toll again to "
+                        "make a fresh restore point, then cross."
+                    ),
+                )
+                held_from = first.device_name
+                emit(
+                    ProgressEvent(
+                        kind=EVENT_APPLY_HELD,
+                        device_name=first.device_name,
+                        title=first.update_title,
+                        status="held",
+                        message=(
+                            "The ferry is holding position — the "
+                            "restore point could no longer be "
+                            "confirmed, so the remaining drivers "
+                            "were not attempted."
+                        ),
+                    )
                 )
                 continue
 

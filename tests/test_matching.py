@@ -183,3 +183,21 @@ def test_full_fixture_machine(cim_entries, pnputil_text, wua_updates):
     assert statuses.count("update_available") == 4
     assert statuses.count("up_to_date") == 3
     assert statuses.count("unknown") == 2
+
+
+def test_model_match_needs_word_boundaries():
+    """Sweep #3: a shared fragment of a word is not a shared model.
+
+    "net" inside "network" (and "audio" inside "audiophile")
+    used to count as a model match, offering one device another
+    device's driver at medium confidence. Containment now counts
+    only at word boundaries; genuine part-name matches still do.
+    """
+    from charon.matching import _models_match
+
+    assert _models_match("Net", "Network Adapter") is False
+    assert _models_match("Audiophile", "Audio Device") is False
+    assert _models_match("Realtek Audio", "Realtek Audio Device") is True
+    assert _models_match("Intel Wi-Fi 6", "Wi-Fi 6") is True
+    assert _models_match("Same Model", "Same Model") is True
+    assert _models_match("", "Anything") is False

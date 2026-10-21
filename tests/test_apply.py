@@ -403,6 +403,120 @@ def test_gate_is_fresh_not_a_session_cache(tmp_path):
     assert installer.calls == []
 
 
+class DropAfterFirstInstall(FakeInstaller):
+    """An installer whose first crossing makes the point vanish —
+    as Windows itself can, pruning the oldest restore points
+    when disk space runs short mid-run."""
+
+    def __init__(self, backend, **kwargs):
+        super().__init__(**kwargs)
+        self._backend = backend
+
+    def install_one(self, update, emit=None):
+        outcome = super().install_one(update, emit=emit)
+        self._backend.drop_all()
+        return outcome
+
+
+def test_point_vanishing_mid_crossing_stops_the_line(tmp_path):
+    """Sweep #3: the gate is re-proved before EVERY install. The
+    point dies after the first driver crosses; the second driver
+    must never be installed, and both verdicts are recorded."""
+    ledger = two_drivers(tmp_path)
+    _record, point = record_and_point(ledger)
+    backend = FakeGateBackend(points=[point])
+    installer = DropAfterFirstInstall(backend)
+    results, _ = apply_staged(
+        ledger,
+        toll_backend=backend,
+        searcher=fresh_searcher(com("Net Driver", "2.0"), com("Audio Driver", "3.1")),
+        installer=installer,
+        verify=ok_verify,
+    )
+    assert [u.Title for u in installer.calls] == ["Net Driver"]
+    assert [r.status for r in results] == ["succeeded", "skipped"]
+    assert "restore point could no longer be confirmed" in results[1].detail
+    data = json.loads(ledger.read_text(encoding="utf-8"))
+    run = data["apply_runs"][0]
+    assert run["counts"]["applied"] == 1
+    assert run["counts"]["skipped"] == 1
+
+
+class GateOnlyBackend(FakeGateBackend):
+    """Answers the gate's first enumeration, then the point is
+    gone — deleted in the breath between the gate and the first
+    install."""
+
+    def list_restore_points(self):
+        points = super().list_restore_points()
+        self._points = []
+        return points
+
+
+def test_point_vanishing_between_gate_and_first_install(tmp_path):
+    """Sweep #3 probe: delete the point between the gate and the
+    first install — zero installs, every driver held, no raise:
+    the run's record says the crossing stopped at the gate."""
+    ledger = two_drivers(tmp_path)
+    _record, point = record_and_point(ledger)
+    backend = GateOnlyBackend(points=[point])
+    installer = FakeInstaller()
+    results, _ = apply_staged(
+        ledger,
+        toll_backend=backend,
+        searcher=fresh_searcher(com("Net Driver", "2.0"), com("Audio Driver", "3.1")),
+        installer=installer,
+        verify=ok_verify,
+    )
+    assert installer.calls == []
+    assert [r.status for r in results] == ["skipped", "skipped"]
+    assert "restore point could no longer be confirmed" in results[0].detail
+
+
+def test_verify_judges_first_name_match_when_no_id(monkeypatch):
+    """Sweep #3: the post-crossing check judges the device that
+    crossed. With no device ID to go on and two devices sharing
+    a name, the FIRST namesake is judged — letting the scan run
+    on to the last one would judge this crossing by a different
+    device's version and could pass a driver that never landed."""
+    from charon.apply import StagedEntry, _default_verify
+    from charon.platform_inventory import InventoryResult
+
+    staged = [
+        StagedEntry(
+            device_id="",
+            device_name="Twin Device",
+            update_title="Twin Driver",
+            update_version="2.0",
+            eula_accepted=True,
+        )
+    ]
+    candidate = UpdateCandidate(title="Twin Driver", version="2.0")
+
+    def fake_collect(runner=None):
+        return InventoryResult(
+            cim_entries=[
+                {
+                    "DeviceName": "Twin Device",
+                    "DeviceID": "",
+                    "DriverVersion": "1.0",
+                },
+                {
+                    "DeviceName": "Twin Device",
+                    "DeviceID": "",
+                    "DriverVersion": "2.0",
+                },
+            ],
+            pnputil_entries=[],
+        )
+
+    monkeypatch.setattr(apply_mod, "collect_inventory", fake_collect)
+    verify = _default_verify(fresh_searcher(), None)
+    healthy, note = verify(staged, candidate)
+    assert healthy is False
+    assert "still reports the older driver version 1.0" in note
+
+
 def test_not_admin_is_refused_before_any_search(tmp_path):
     ledger = two_drivers(tmp_path)
     record_and_point(ledger)
