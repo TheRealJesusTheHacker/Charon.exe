@@ -261,12 +261,60 @@ is a shipped deliverable with its build wired end to end:
 The portable edition is Charon's seat in the Sentinel IT Toolkit
 USB, alongside NitroCore Portable and Argus Portable.
 
+## Phase 6 — Driver backup/export (the passenger manifest)
+
+The one backlog item that completes the existing workflow rather
+than adding a new one: the toll (restore point) protects the
+crossing; the manifest is the cargo record of what was carried.
+
+**Status: BUILT (2026-10-21) — v1.0.5.**
+
+- `charon/manifest.py` — pure logic plus the one file write the
+  owner asks for: it assembles the keepable manifest from the scan
+  report and the ledger's crossing record, and writes it
+  atomically. The driver rows are the scan report's own
+  serialization — the manifest may not paraphrase the cargo — and
+  every count is computed from the rows the manifest carries.
+- The manifest holds: every driver the scan found (device,
+  provider, version, date, class, signer status, the update
+  Windows Update offered), plus — when the ledger has them — the
+  download records, the tolls paid (restore point numbers and
+  times), and the apply records of what crossed.
+- Two forms: JSON (the full record) and a readable text document
+  for keeping or printing. `python -m charon manifest --out
+  <file>` (fresh scan, or `--from-report <scan.json>`), `--format
+  text` for the readable form, `--ledger` for the crossing
+  record's source. The window carries the same export as the
+  manifest page's **Save passenger manifest** button (saved to
+  the owner's Documents folder), driven through the same composed
+  pipeline as every other engine call.
+- Honesty, pinned by test: a scan that could not hear from every
+  source produces a manifest marked **not complete**, with the
+  scan's warnings carried verbatim; a ledger that cannot be read
+  flags the crossing record the same way — a partial manifest is
+  never dressed as complete. A failed export is a designed
+  failure and leaves no partial file at the destination (and
+  never touches a good manifest already saved there).
+- The toll is untouched by this phase: the manifest reads records
+  and writes one export file. It creates no restore point, asks
+  Windows Update nothing, and the apply gate — including
+  v1.0.4's re-proof before every install — is exactly as shipped.
+  Sourcing remains the Windows Update Agent API only.
+- **Pending: Windows on-hardware verification** — the same list
+  as the other phases: an exported manifest from a real scan on
+  aroura, checked against Device Manager and the ledger.
+
 ## Later / backlog
 
-- Single self-installing `Charon.exe` (the Argus v1.1.0 pattern: one file,
-  one permission prompt, self-verifying setup) once the engine phases land.
-- Driver backup/export (a "passenger manifest" the owner can keep).
-- Scheduled scan reminders ("the ferryman returns monthly").
+- **Single self-installing `Charon.exe` — CLOSED (2026-10-21).**
+  Portable-only is the decided form: the portable one-folder
+  edition is the owner's portable mandate already shipped — a
+  second installer artifact adds sync burden and an
+  unsigned-installer surface for zero added capability.
+- **Scheduled scan reminders ("the ferryman returns monthly") —
+  CLOSED (2026-10-21).** Drivers do not expire monthly and
+  Windows Update already reminds; a reminder surface is scope
+  in search of a need.
 - Signed update-feed / vendor-catalog expansion beyond Windows Update,
   only if it can be done with verified provenance.
 
