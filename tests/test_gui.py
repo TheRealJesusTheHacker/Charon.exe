@@ -697,3 +697,51 @@ def test_engine_worker_drops_its_callable_after_running(qapp):
     qapp.processEvents()
     assert seen.get("result") == 41
     assert worker._fn is None
+
+
+# ----------------------------------------------------------------------
+# Phase 6 — the passenger manifest button (B-5)
+# ----------------------------------------------------------------------
+
+
+def test_manifest_button_saves_the_current_report(window, monkeypatch, qapp):
+    monkeypatch.setattr(gui, "engine_scan", lambda: make_report())
+    seen = {}
+
+    def fake_manifest(report, emit=None):
+        seen["report"] = report
+        return Path("charon-passenger-manifest.json")
+
+    monkeypatch.setattr(gui, "engine_manifest", fake_manifest)
+    window.start_scan()
+    assert settle(qapp, window)
+    assert window.btn_manifest.isEnabled()
+    window.start_manifest_export()
+    assert settle(qapp, window)
+    assert seen["report"] is window._report
+    assert "Passenger manifest saved" in window.status_line.text()
+    assert "charon-passenger-manifest.json" in window.status_line.text()
+    # Saving a record never moves the owner off the manifest page.
+    assert window.pages.currentIndex() == gui._PAGE_MANIFEST
+
+
+def test_manifest_button_failure_is_a_designed_screen(window, monkeypatch, qapp):
+    from charon.manifest import ManifestExportError
+
+    monkeypatch.setattr(gui, "engine_scan", lambda: make_report())
+
+    def refused(report, emit=None):
+        raise ManifestExportError(
+            "Charon couldn't write the passenger manifest file.",
+            detail="fake disk detail",
+        )
+
+    monkeypatch.setattr(gui, "engine_manifest", refused)
+    window.start_scan()
+    assert settle(qapp, window)
+    window.start_manifest_export()
+    assert settle(qapp, window)
+    assert window.pages.currentIndex() == gui._PAGE_MESSAGE
+    assert window.message_title.text() == "The passenger manifest couldn't be saved"
+    assert "couldn't write the passenger manifest" in window.message_body.text()
+    assert "fake disk detail" not in window.message_body.text()

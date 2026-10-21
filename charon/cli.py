@@ -24,6 +24,12 @@ gate — re-verified against the PC at that moment, never taken on
 trust — and installs one driver at a time, checking the device
 after each crossing. A restart is reported, never forced.
 
+``python -m charon manifest`` runs Phase 6: it writes the
+passenger manifest — the keepable record of every driver the
+scan found, plus the crossing record from the ledger — to the
+file named by ``--out``, as JSON or readable text. Making the
+manifest changes nothing on the PC.
+
 Every failure a user can hit is a designed state with a
 plain-language message; technical detail goes to the log
 (``--debug``), never to a traceback on screen.
@@ -65,6 +71,11 @@ from .download import (
     summarize_results,
 )
 from .inventory import merge_inventories, normalize_update
+from .manifest import (
+    ManifestExportError,
+    PassengerManifest,
+    export_manifest,
+)
 from .matching import match_devices
 from .model import (
     STATUS_UNKNOWN,
@@ -583,6 +594,81 @@ def _apply_command(args) -> int:
 
 
 # ----------------------------------------------------------------------
+# Phase 6 — the passenger manifest (a record to keep)
+# ----------------------------------------------------------------------
+
+
+def run_manifest(
+    report: ScanReport,
+    out_path,
+    *,
+    fmt: str = "json",
+    ledger_path=None,
+) -> tuple[PassengerManifest, Path]:
+    """Build the keepable manifest for ``report`` and write it.
+
+    Thin composition over :func:`charon.manifest.export_manifest`,
+    shaped like :func:`run_download` so the CLI and the window
+    drive the same export. Raises :class:`ManifestExportError`
+    when the file can't be written — a designed failure, and no
+    partial file is left behind.
+    """
+    path = Path(out_path)
+    manifest = export_manifest(
+        report, path, fmt=fmt, ledger_path=ledger_path
+    )
+    return manifest, path
+
+
+def _manifest_command(args) -> int:
+    if not args.out:
+        print(
+            "Tell Charon where to save the passenger manifest: "
+            "python -m charon manifest --out <file>"
+        )
+        return EXIT_DESIGNED_FAILURE
+    if args.from_report:
+        try:
+            report = load_report(args.from_report)
+        except InventoryUnavailable as exc:
+            log.error("report load failed: %s", exc.detail or exc)
+            print(exc.user_message)
+            return EXIT_DESIGNED_FAILURE
+    else:
+        try:
+            report = run_scan()
+        except InventoryUnavailable as exc:
+            log.error("inventory unavailable: %s", exc.detail or exc)
+            print(exc.user_message)
+            return EXIT_DESIGNED_FAILURE
+
+    try:
+        manifest, path = run_manifest(
+            report,
+            args.out,
+            fmt=args.format,
+            ledger_path=args.ledger,
+        )
+    except ManifestExportError as exc:
+        log.error("manifest export failed: %s", exc.detail or exc)
+        print(exc.user_message)
+        return EXIT_DESIGNED_FAILURE
+
+    print(
+        "CHARON.EXE — passenger manifest (Phase 6: a record to "
+        "keep; nothing on this PC was changed)"
+    )
+    print(report.summary_line())
+    if not manifest.complete or not manifest.crossing["complete"]:
+        print(
+            "Note: this manifest is marked not complete — see the "
+            "warnings written into the file itself."
+        )
+    print(f"Passenger manifest written to {path}")
+    return EXIT_OK
+
+
+# ----------------------------------------------------------------------
 # Phase 5 — the window
 # ----------------------------------------------------------------------
 
@@ -611,7 +697,8 @@ def main(argv: list[str] | None = None) -> int:
         description="CHARON.EXE — Sentinel Safeguard driver updater. "
         "Scan, download (staged only), the toll (a restore point, "
         "created and verified), then apply — one driver at a time, "
-        "behind the gate. Nobody crosses without paying it.",
+        "behind the gate. Nobody crosses without paying it. The "
+        "manifest command writes the keepable record of it all.",
     )
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument(
@@ -671,6 +758,35 @@ def main(argv: list[str] | None = None) -> int:
         metavar="PATH",
         help="ledger location (default: Charon's app-state folder)",
     )
+    manifest = sub.add_parser(
+        "manifest",
+        help="write the passenger manifest — the keepable record "
+        "of this PC's drivers and Charon's crossings — to a file",
+    )
+    manifest.add_argument(
+        "--out",
+        metavar="PATH",
+        help="where to write the manifest file",
+    )
+    manifest.add_argument(
+        "--format",
+        choices=["json", "text"],
+        default="json",
+        help="json (the full record) or text (the readable document); "
+        "default: json",
+    )
+    manifest.add_argument(
+        "--from-report",
+        metavar="PATH",
+        help="build the manifest from an exported scan report instead "
+        "of scanning now",
+    )
+    manifest.add_argument(
+        "--ledger",
+        metavar="PATH",
+        help="ledger location for the crossing record (default: "
+        "Charon's app-state folder)",
+    )
     sub.add_parser(
         "gui",
         help="open Charon's window — the whole crossing as one "
@@ -691,6 +807,8 @@ def main(argv: list[str] | None = None) -> int:
         return _toll_command(args)
     if args.command == "apply":
         return _apply_command(args)
+    if args.command == "manifest":
+        return _manifest_command(args)
     if args.command == "gui":
         return _gui_command(args)
     parser.print_help()

@@ -24,6 +24,12 @@ file, in the open — never as a quiet edit elsewhere:
   NO capability of its own: it holds no session, builds no COM
   object, runs no command — it calls the same composed pipeline
   the CLI drives and renders what the engine reports.
+- **Phase 6 (B-5)** added the passenger manifest (``manifest.py``):
+  a keepable export of records Charon already made. It owns NO
+  capability against the PC — no seam, no command, no session; it
+  arranges the scan report and the ledger's crossing record and
+  writes the one file the owner asked for, atomically, the same
+  honesty discipline as the ledger writer.
 
 What never changes: driver mutation and update installation have
 NO home in this package until their own phase arrives, and each
@@ -50,6 +56,7 @@ EXPECTED_MODULES = {
     "gui.py",
     "hud.py",
     "inventory.py",
+    "manifest.py",
     "matching.py",
     "model.py",
     "platform_inventory.py",

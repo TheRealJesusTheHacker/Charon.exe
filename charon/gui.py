@@ -91,6 +91,18 @@ def engine_apply(emit):
     return cli.run_apply(emit=emit)
 
 
+def engine_manifest(report, emit=None):
+    """Phase 6: write the passenger manifest for this scan — the
+    keepable record — to the owner's Documents folder. Returns
+    the path written; raises the designed export failure."""
+    from .manifest import default_manifest_path
+
+    _manifest, path = cli.run_manifest(
+        report, default_manifest_path()
+    )
+    return path
+
+
 def _user_message(exc: Exception, fallback: str) -> str:
     """A designed failure's own words, or a plain fallback. Raw
     exception text is for the log, never the screen."""
@@ -295,6 +307,9 @@ class MainWindow(QMainWindow):
         self.btn_rescan = QPushButton("Scan again")
         self.btn_rescan.clicked.connect(self.start_scan)
         footer.addWidget(self.btn_rescan)
+        self.btn_manifest = QPushButton("Save passenger manifest")
+        self.btn_manifest.clicked.connect(self.start_manifest_export)
+        footer.addWidget(self.btn_manifest)
         footer.addStretch(1)
         self.btn_download = QPushButton("Download selected drivers")
         self.btn_download.setObjectName("primary")
@@ -544,6 +559,7 @@ class MainWindow(QMainWindow):
         )
         self._active_step = "download"
         self.btn_download.setEnabled(False)
+        self.btn_manifest.setEnabled(False)
         self.btn_rescan.setEnabled(False)
         for row in self._rows.values():
             row.set_selectable(False)
@@ -588,6 +604,8 @@ class MainWindow(QMainWindow):
         for key, row in self._rows.items():
             row.set_selectable(key in updatable_keys)
         self.btn_download.setVisible(bool(updatable_keys))
+        self.btn_manifest.setVisible(True)
+        self.btn_manifest.setEnabled(True)
         self._refresh_download_button()
 
     def _on_download_done(self, payload) -> None:
@@ -619,6 +637,44 @@ class MainWindow(QMainWindow):
                 exc,
                 "Windows Update didn't answer, so nothing was "
                 "downloaded — and nothing was installed.",
+            ),
+            "Back to your drivers",
+            lambda: self.pages.setCurrentIndex(_PAGE_MANIFEST),
+        )
+
+    # ------------------------------------------------------------------
+    # The passenger manifest (Phase 6 — a record to keep)
+    # ------------------------------------------------------------------
+
+    def start_manifest_export(self) -> None:
+        """Save the keepable manifest for the current scan. The
+        export is a record, not a step of the Crossing: it runs
+        on the worker like every engine call, and the owner stays
+        on the manifest page when it lands."""
+        if self._busy() or self._report is None:
+            return
+        self._active_step = "manifest"
+        self.btn_manifest.setEnabled(False)
+        self._set_status("Saving the passenger manifest…")
+        report = self._report
+        self._run_worker(
+            lambda emit: engine_manifest(report, emit),
+            self._on_manifest_saved,
+            self._on_manifest_failed,
+        )
+
+    def _on_manifest_saved(self, path) -> None:
+        self.btn_manifest.setEnabled(True)
+        self._set_status(f"Passenger manifest saved — {path}")
+
+    def _on_manifest_failed(self, exc: Exception) -> None:
+        self.btn_manifest.setEnabled(True)
+        self._show_message(
+            "The passenger manifest couldn't be saved",
+            _user_message(
+                exc,
+                "Charon couldn't write the passenger manifest "
+                "file this time. Nothing on this PC was changed.",
             ),
             "Back to your drivers",
             lambda: self.pages.setCurrentIndex(_PAGE_MANIFEST),
@@ -708,6 +764,7 @@ class MainWindow(QMainWindow):
         # The manifest's picking controls retire for the crossing:
         # nothing may be re-scanned or re-picked mid-river.
         self.btn_download.setVisible(False)
+        self.btn_manifest.setVisible(False)
         self.btn_rescan.setEnabled(False)
         self._prepare_apply_rows()
         self.pages.setCurrentIndex(_PAGE_MANIFEST)
@@ -815,6 +872,8 @@ class MainWindow(QMainWindow):
 
     def _on_engine_event(self, event) -> None:
         kind = getattr(event, "kind", "")
+        if self._active_step == "manifest":
+            return  # the export emits no events; nothing to render
         if kind.startswith("toll_"):
             self._on_toll_event(event)
         elif kind.startswith(("crossing_", "apply_", "reboot_")):
