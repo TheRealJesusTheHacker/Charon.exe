@@ -222,15 +222,22 @@ Running from source — the other way to run Charon. What you need:
   the `Microsoft.Update.Session` COM object through it.
 - **pytest** — only to run the test suite.
 
-This repository ships no end-user `requirements.txt`, so the
-source steps are exactly: (The pinned file under `packaging/`
-is for the release pipeline's builds, not for source installs.)
+This repository ships no end-user `requirements.txt`. The one
+install input is the hash-locked set under `packaging/`: every
+dependency — direct and transitive — is pinned to an exact
+version with a SHA-256 hash, and pip verifies each artifact
+against it (`--require-hashes`), failing loudly on any
+mismatch. (The unhashed pin file beside it,
+`requirements-ci.txt`, records the direct pins the lock was
+generated from; installs use the lock, not the pins.) The set
+includes pytest and the release build tools as well as PySide6
+and pywin32 — it is exactly the set the test suite and the
+release pipeline run on — and the source steps are exactly:
 
 ```bat
 git clone https://github.com/TheRealJesusTheHacker/Charon.exe.git
 cd Charon.exe
-pip install PySide6
-pip install pywin32
+pip install --require-hashes -r packaging/requirements-ci.lock.txt
 python -m charon --version
 ```
 

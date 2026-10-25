@@ -249,6 +249,11 @@ is a shipped deliverable with its build wired end to end:
   as `python -m charon`.
 - `packaging/requirements-ci.txt` — the release build's pinned
   dependency list.
+- `packaging/requirements-ci.lock.txt` — the hash-locked
+  resolution of those pins (direct + transitive, SHA-256 per
+  artifact); every install — release workflow and source
+  installs alike — runs
+  `pip install --require-hashes -r packaging/requirements-ci.lock.txt`.
 - `packaging/portable/README-PORTABLE.txt` — ships inside the zip,
   including the honest differences from running from source (the
   ledger and restore points stay with the machine they describe).
