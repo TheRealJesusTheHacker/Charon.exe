@@ -2,7 +2,7 @@
 
 **Sentinel Safeguard LLC — the Windows driver updater that pays the toll first.**
 
-[![Version](https://img.shields.io/badge/version-v1.0.5-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.5)
+[![Version](https://img.shields.io/badge/version-v1.0.6-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.5)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white)](https://github.com/TheRealJesusTheHacker/Charon.exe)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![UI](https://img.shields.io/badge/UI-PySide6-41cd52?style=flat-square)](https://doc.qt.io/qtforpython-6/)
@@ -192,7 +192,7 @@ The workflow is fixed in the code, not suggested by it:
 ## Installation
 
 **The portable edition has shipped — the current release is
-[v1.0.5](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.5).**
+[v1.0.6](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.6).**
 Download `CharonPortable.zip` from that release (its
 `SHA256SUMS.txt` is attached alongside it), unzip it anywhere —
 a folder on the PC or the Sentinel IT Toolkit USB — open the
@@ -290,7 +290,7 @@ python -m charon toll              # pay the toll: create + verify a restore poi
 python -m charon apply             # the crossing: install the staged drivers
 python -m charon manifest --out manifest.json  # the keepable record
 python -m charon gui               # the window: the whole crossing, guided
-python -m charon --version         # 1.0.5
+python -m charon --version         # 1.0.6
 ```
 
 | Command | Options | Notes |
@@ -432,7 +432,7 @@ python -m pytest --collect-only -q
 ```
 
 The suite stands at **253 tests, verified by collection**
-(251 passed, 2 skipped in the v1.0.5 run), and runs
+(251 passed, 2 skipped in the v1.0.6 run), and runs
 green on Linux — because it is built to: recorded fixtures
 (`tests/fixtures/` — CIM driver JSON, `pnputil` output, Windows
 Update offers) and fake/recorded seams stand in for Windows, and the
@@ -490,6 +490,17 @@ pin them against the live API on the runner. The same hunt fixed the window clos
 (it now refuses, in plain language, until the step finishes) and
 made the ledger lock's unlocked fallbacks log a warning instead
 of proceeding in silence. See [CHANGELOG.md](CHANGELOG.md).
+
+**v1.0.6 — hash-locked release builds (2026-10-25).**
+The release workflow now installs its dependencies from a
+committed SHA-256 lock with `--require-hashes`, and the CI
+setuptools pin is 84.1.0 (the GHSA-xmj3-9gf7-h52w fix). A
+functional bug hunt over the core workflows found no
+defects: the suite stands at 251 passed, 2 skipped, the
+toll gate was exercised directly (nothing crosses unpaid,
+and the window's crossing stays locked until the toll is
+paid), and the passenger manifest was written end to end
+from a scan report. The crossing's order is unchanged.
 
 **v1.0.5 — the passenger manifest (2026-10-21).** Phase 6
 (v1.0.5): driver backup/export is built — the keepable passenger

@@ -1,5 +1,33 @@
 # Changelog — CHARON.EXE
 
+## v1.0.6 — 2026-10-25
+
+Supply-chain patch release. The crossing's order — Scan →
+Download → Restore point → Apply — is unchanged, the toll is
+untouched (including the re-proof before every install), and
+driver sourcing is still the Windows Update Agent API only.
+
+- **Release builds now install from a hash-locked dependency
+  set.** The release workflow installs
+  `packaging/requirements-ci.lock.txt` with
+  `pip install --require-hashes`: every package — direct pins
+  and the full transitive tree — is verified against a
+  committed SHA-256 lock, and the install fails loudly on any
+  mismatch.
+- **CI setuptools pin updated to 84.1.0**, which fixes
+  GHSA-xmj3-9gf7-h52w (a Windows path escape in older
+  setuptools).
+- **Functional bug hunt (this release train): no defects
+  found.** The full suite passes (251 passed, 2 skipped).
+  The gate was exercised directly: apply with nothing staged
+  stops before anything is installed; the window opens with
+  **Begin the crossing** disabled until the toll is paid;
+  scan, toll, and download refuse in plain language on a
+  machine without Windows Update; and the passenger manifest
+  was written end to end (JSON and text) from a scan report.
+
+Suite: 251 passed, 2 skipped.
+
 ## v1.0.5 — 2026-10-21
 
 Phase 6: the passenger manifest (roadmap item B-5, built on the
