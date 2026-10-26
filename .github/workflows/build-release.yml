@@ -27,11 +27,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-portable:
     runs-on: windows-latest
+    permissions: { contents: write }
     steps:
       # Actions pinned to full commit SHAs (supply-chain hardening,
       # the same pins the Argus release workflow uses; SHAs verified
