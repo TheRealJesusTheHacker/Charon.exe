@@ -2,7 +2,7 @@
 
 **Sentinel Safeguard LLC — the Windows driver updater that pays the toll first.**
 
-[![Version](https://img.shields.io/badge/version-v1.0.6-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.5)
+[![Version](https://img.shields.io/badge/version-v1.0.6-2ee06f?style=flat-square)](https://github.com/TheRealJesusTheHacker/Charon.exe/releases/tag/v1.0.6)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white)](https://github.com/TheRealJesusTheHacker/Charon.exe)
 [![Python](https://img.shields.io/badge/Python-3-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![UI](https://img.shields.io/badge/UI-PySide6-41cd52?style=flat-square)](https://doc.qt.io/qtforpython-6/)
